@@ -209,6 +209,7 @@ export interface EventRow {
 
 export interface CashoutRow {
   id: string
+  raw_status?: string
   source: 'cashouts' | 'cycling_cashouts' | 'venue_booking_cashout'
   type: 'Match' | 'Cycling' | 'Venue'
   organizer: string
@@ -509,8 +510,22 @@ export const adminOperations = {
   // Cashouts
   getCashouts: (status: string, start: string | null, end: string | null) =>
     rpc<CashoutRow[]>('admin_get_cashouts', { p_status: status, p_start: start, p_end: end }),
-  updateCashoutStatus: (source: string, id: string, status: 'approved' | 'rejected', reason?: string, reference?: string) =>
-    rpc<void>('admin_update_cashout_status', { p_source: source, p_id: id, p_status: status, p_reason: reason ?? null, p_reference: reference ?? null }),
+  /** Approves or rejects, then sends the requester push and email. Returns who was told. */
+  async updateCashoutStatus(source: string, id: string, status: 'approved' | 'rejected', reason?: string, reference?: string) {
+    const args = { p_source: source, p_id: id, p_status: status, p_reason: reason ?? null, p_reference: reference ?? null }
+    let res: { ok: boolean; notification_id?: string | null; notified?: string | null } | null = null
+    try {
+      res = await rpc<{ ok: boolean; notification_id?: string | null; notified?: string | null }>('admin_update_cashout_status_v2', args)
+    } catch (e) {
+      const msg = String((e as { message?: string })?.message ?? '')
+      if (!/admin_update_cashout_status_v2|PGRST202|Could not find the function/i.test(msg)) throw e
+      await rpc<void>('admin_update_cashout_status', args)
+    }
+    if (res?.notification_id) {
+      await dispatch({ action: 'notification', notification_id: res.notification_id }).catch((e) => console.warn('Cashout notice not delivered', e))
+    }
+    return res
+  },
 
   // Venues
   getVenues: () => rpc<VenueRow[]>('admin_get_venues'),

@@ -75,9 +75,9 @@ export default function AdminCashouts() {
     if (!(await stepUp('approve this payout'))) return
     setBusyId(c.id)
     try {
-      await adminOperations.updateCashoutStatus(c.source, c.id, 'approved', undefined, reason)
+      const res = await adminOperations.updateCashoutStatus(c.source, c.id, 'approved', undefined, reason)
       patch(c, { status: 'approved', rejection_reason: null })
-      toast.success('Cashout approved', `${naira(c.amount)} to ${c.organizer}. Download the receipt from the row.`)
+      toast.success('Cashout approved', `${naira(c.amount)} to ${c.organizer}.${res?.notified ? ` ${res.notified} was notified.` : ''} Download the receipt from the row.`)
     } catch (e) {
       toast.error('Could not approve', errorMessage(e))
     } finally {
@@ -94,9 +94,9 @@ export default function AdminCashouts() {
     if (!ok) return
     setBusyId(c.id)
     try {
-      await adminOperations.updateCashoutStatus(c.source, c.id, 'rejected', reason)
+      const res = await adminOperations.updateCashoutStatus(c.source, c.id, 'rejected', reason)
       patch(c, { status: 'rejected', rejection_reason: reason })
-      toast.success('Cashout rejected')
+      toast.success('Cashout rejected', res?.notified ? `${res.notified} was notified with the reason.` : undefined)
     } catch (e) {
       toast.error('Could not reject', errorMessage(e))
     } finally {
