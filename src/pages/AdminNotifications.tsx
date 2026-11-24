@@ -17,6 +17,8 @@ import { adminOperations, type AdminNotification, type NotificationPerformance, 
 import { cn, dateBounds, errorMessage, shortId, type DateFilter } from '@/lib/utils'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const audienceOf = (n: AdminNotification) => n.audience || n.target_type
 const norm = (s: string | null | undefined) => (s || '').toLowerCase().replace(/[^a-z]/g, '')
 
 const TARGETS = [
@@ -71,7 +73,7 @@ export default function AdminNotifications() {
   const [target, setTarget] = useState('all')
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ type: 'push', target: 'all', targetId: '', title: '', message: '', link: '/', customLink: '', image: '' })
+  const [form, setForm] = useState({ type: 'push', target: 'all', targetId: '', email: '', title: '', message: '', link: '/', customLink: '', image: '' })
   const [sending, setSending] = useState(false)
   const [summary, setSummary] = useState<Summary>({})
   const [perf, setPerf] = useState<{ n: AdminNotification; data: NotificationPerformance | null; loading: boolean; refreshing: boolean } | null>(null)
@@ -95,7 +97,7 @@ export default function AdminNotifications() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return items.filter((n) => (target === 'all' || norm(n.target_type) === norm(target) || (norm(target) === 'venueowners' && norm(n.target_type) === 'venueowner')) && (!q || `${n.title} ${n.message}`.toLowerCase().includes(q)))
+    return items.filter((n) => (target === 'all' || norm(audienceOf(n)) === norm(target) || (norm(target) === 'venueowners' && norm(audienceOf(n)) === 'venueowner')) && (!q || `${n.title} ${n.message}`.toLowerCase().includes(q)))
   }, [items, target, search])
   const { pageRows, pagination } = usePaged(filtered, 10)
 
@@ -131,15 +133,14 @@ export default function AdminNotifications() {
     }
   }
 
-  const needsId = form.target === 'user' || form.target === 'event'
   const link = form.link === 'custom' ? form.customLink.trim() : form.link
   const linkOk = !link || link.startsWith('/') || link.startsWith('https://')
   const imageOk = !form.image.trim() || form.image.trim().startsWith('https://')
-  const valid = form.message.trim().length > 0 && form.message.length <= 500 && (!needsId || UUID_RE.test(form.targetId.trim())) && linkOk && imageOk
+  const valid = form.message.trim().length > 0 && form.message.length <= 500 && (form.target !== 'user' || EMAIL_RE.test(form.email.trim())) && (form.target !== 'event' || UUID_RE.test(form.targetId.trim())) && linkOk && imageOk
 
   const openWith = (t?: (typeof TEMPLATES)[number]) => {
     const blank = { link: '/', customLink: '', image: '' }
-    setForm(t ? { type: t.type, target: t.target, targetId: '', title: t.title, message: t.message, ...blank } : { type: 'push', target: 'all', targetId: '', title: '', message: '', ...blank })
+    setForm(t ? { type: t.type, target: t.target, targetId: '', email: '', title: t.title, message: t.message, ...blank } : { type: 'push', target: 'all', targetId: '', email: '', title: '', message: '', ...blank })
     setOpen(true)
   }
 
@@ -149,7 +150,7 @@ export default function AdminNotifications() {
     if (!ok) return
     setSending(true)
     try {
-      const n = await adminOperations.sendNotification({ type: form.type, target: form.target, targetId: needsId ? form.targetId.trim() : null, title: form.title.trim(), message: form.message.trim(), link, image: form.image.trim() })
+      const n = await adminOperations.sendNotification({ type: form.type, target: form.target, targetId: form.target === 'event' ? form.targetId.trim() : null, email: form.target === 'user' ? form.email.trim().toLowerCase() : undefined, title: form.title.trim(), message: form.message.trim(), link, image: form.image.trim() })
       setItems((list) => [n, ...list])
       setOpen(false)
       await deliver(n)
@@ -214,10 +215,15 @@ export default function AdminNotifications() {
       ),
     },
     {
-      key: 'target', header: 'Target', sort: (n) => n.target_type,
+      key: 'target', header: 'Target', sort: (n) => audienceOf(n),
       cell: (n) => {
-        const t = TARGETS.find((x) => norm(x.value) === norm(n.target_type)) ?? TARGETS[0]
-        return <span className="inline-flex items-center gap-1.5 text-sm"><t.icon className="h-4 w-4 text-muted-foreground" />{t.label}</span>
+        const t = TARGETS.find((x) => norm(x.value) === norm(audienceOf(n))) ?? TARGETS[0]
+        return (
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-sm">
+            <t.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate">{n.audience_email || t.label}</span>
+          </span>
+        )
       },
     },
     { key: 'type', header: 'Type', sort: (n) => n.type, cell: (n) => typeBadge(n.type) },
@@ -352,8 +358,12 @@ export default function AdminNotifications() {
               ))}
             </div>
           </div>
-          {needsId ? (
-            <Field label={form.target === 'user' ? 'User ID' : 'Event ID'} htmlFor="target-id" hint="Copy it from the Users or Events page" error={form.targetId && !UUID_RE.test(form.targetId.trim()) ? 'That does not look like a valid ID' : null}>
+          {form.target === 'user' ? (
+            <Field label="User email" htmlFor="target-email" hint="The email the user signed up with" error={form.email && !EMAIL_RE.test(form.email.trim()) ? 'Enter a valid email address' : null}>
+              <Input id="target-email" type="email" autoComplete="off" placeholder="name@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </Field>
+          ) : form.target === 'event' ? (
+            <Field label="Event ID" htmlFor="target-id" hint="Copy it from the Events page" error={form.targetId && !UUID_RE.test(form.targetId.trim()) ? 'That does not look like a valid ID' : null}>
               <Input id="target-id" placeholder="00000000-0000-0000-0000-000000000000" value={form.targetId} onChange={(e) => setForm({ ...form, targetId: e.target.value })} className="font-mono" />
             </Field>
           ) : null}

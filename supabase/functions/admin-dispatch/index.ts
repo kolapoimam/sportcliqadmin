@@ -148,10 +148,10 @@ Deno.serve(async (req) => {
     const { data: n, error: nErr } = await db.from('notifications').select('*').eq('id', id).maybeSingle()
     if (nErr || !n) return json(req, { error: 'Notification not found' }, 404)
 
-    const type = norm(n.type)
+    const type = norm(n.channel || n.type)
     const wantPush = type === 'push' || type === 'both' || type === 'inapp'
     const wantEmail = type === 'email' || type === 'both'
-    const target = norm(n.target_type)
+    const target = norm(n.audience || n.target_type)
     const link = n.link ? (String(n.link).startsWith('http') ? n.link : APP_URL + n.link) : APP_URL
 
     const { data: recipients, error: rErr } = await db.rpc('admin_notification_recipients', { p_id: id })

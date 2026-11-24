@@ -131,6 +131,9 @@ export interface AdminNotification {
   category: string
   type: string
   target_type: string
+  audience?: string | null
+  audience_email?: string | null
+  channel?: string | null
   target_id: string | null
   link: string | null
   unread: boolean | null
@@ -538,8 +541,14 @@ export const adminOperations = {
     dispatch<{ ok: boolean; status: string; push_sent: number; email_sent: number; recipients: number; error?: string }>({ action: 'notification', notification_id: id }),
   markAllAlertsRead: () => rpc<void>('admin_mark_all_alerts_read'),
   deleteNotification: (id: string) => rpc<void>('admin_delete_notification', { p_id: id }),
-  async sendNotification(p: { type: string; target: string; targetId: string | null; title: string; message: string; link?: string; image?: string }) {
+  async sendNotification(p: { type: string; target: string; targetId: string | null; email?: string; title: string; message: string; link?: string; image?: string }) {
     const base = { p_type: p.type, p_target: p.target, p_target_id: p.targetId, p_title: p.title, p_message: p.message }
+    try {
+      return await rpc<AdminNotification>('admin_send_notification_v3', { ...base, p_target_email: p.email || null, p_link: p.link || null, p_image: p.image || null })
+    } catch (e) {
+      const msg = String((e as { message?: string })?.message ?? '')
+      if (!/admin_send_notification_v3|PGRST202|Could not find the function/i.test(msg)) throw e
+    }
     try {
       return await rpc<AdminNotification>('admin_send_notification_v2', { ...base, p_link: p.link || null, p_image: p.image || null })
     } catch (e) {
@@ -635,8 +644,9 @@ export const adminOperations = {
   updateMyName: (first: string, last: string) => rpc<void>('admin_update_my_name', { p_first: first, p_last: last }),
 }
 
-export function isAdminAlert(n: Pick<AdminNotification, 'target_type' | 'category'>) {
-  const t = (n.target_type || '').toLowerCase()
+export function isAdminAlert(n: Pick<AdminNotification, 'target_type' | 'category'> & { audience?: string | null; status?: string | null }) {
+  const a = (n.audience || n.target_type || '').toLowerCase()
   const c = (n.category || '').toLowerCase().replace(/[^a-z]/g, '')
-  return t === 'admin' || c === 'adminalert'
+  if (n.audience) return a === 'admin'
+  return a === 'admin' || n.status === 'alert' || c === 'adminalert'
 }
