@@ -86,9 +86,13 @@ Organisers and hosts pay nothing on their first 2 paid activities (matches and r
 
 The portal is not connected to a transfer service and never moves money. Cashouts and ambassador payouts are sent from the SportCliq bank account by hand, then approved in the portal with the transfer reference.
 
+## First super admin
+
+kolapoimaam@gmail.com is set as the first super admin by `20261124000004_admin_portal_v5.sql`. Sign in with Google using that address, or add it in Supabase Authentication > Users with Auto Confirm on and a password. The login links to the admin record automatically.
+
 ## Push notifications
 
-Admins send push, email or both from Notifications. Each push carries a tap link and an optional image, and the OneSignal id is saved so the portal can show sent, delivered, clicks and failures. The SportCliq app can show admin messages in its own list with `app_my_notifications()` and report views, opens and clicks with `app_track_notification(id, 'view' | 'open' | 'click')`.
+Admins send push, email or both from Notifications. Each push carries a tap link and an optional image, and the OneSignal id is saved so the portal can show sent, delivered, clicks and failures. The SportCliq app shows admin messages on its Notifications screen (/notifications) through `app_my_notifications()` and report views, opens and clicks with `app_track_notification(id, 'view' | 'open' | 'click')`.
 
 ## Install and privacy
 
