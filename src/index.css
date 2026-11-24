@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+
+  /* Sport Cliq green */
+  --color-playarena-50: #ecfdf3;
+  --color-playarena-100: #d1fae1;
+  --color-playarena-200: #a6f4c7;
+  --color-playarena-300: #6ce8a7;
+  --color-playarena-400: #32d27f;
+  --color-playarena-500: #0fb863;
+  --color-playarena-600: #05964f;
+  --color-playarena-700: #077742;
+  --color-playarena-800: #0a5e37;
+  --color-playarena-900: #0a4d2f;
+
+  --color-primary: #05964f;
+  --color-primary-light: #0fb863;
+  --color-primary-dark: #077742;
+  --color-primary-foreground: #ffffff;
+
+  --color-background: #ffffff;
+  --color-foreground: #0a0a0a;
+  --color-muted: #f4f4f5;
+  --color-muted-foreground: #71717a;
+  --color-border: #e4e4e7;
+  --color-destructive: #dc2626;
+}
+
+@layer base {
+  html.dark {
+    --color-background: #0a0a0a;
+    --color-foreground: #fafafa;
+    --color-muted: #27272a;
+    --color-muted-foreground: #a1a1aa;
+    --color-border: #3f3f46;
+  }
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    @apply bg-gray-50 text-foreground font-sans antialiased dark:bg-gray-900;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
