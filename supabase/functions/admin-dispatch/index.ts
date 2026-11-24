@@ -154,6 +154,21 @@ async function onesignalStats(ids: string[]) {
   return total
 }
 
+async function resendOne(e: { to: string; subject: string; html: string }) {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: EMAIL_FROM, to: [e.to], reply_to: REPLY_TO, subject: e.subject, html: e.html }),
+  })
+  const text = await res.text()
+  if (!res.ok) console.error('Resend error', e.to, res.status, text)
+  return { ok: res.ok, status: res.status, text }
+}
+
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// Sends in batches of 100. If a batch is refused, each email in it is tried on its own,
+// so one bad address cannot stop everyone else's email.
 async function resendBatch(emails: { to: string; subject: string; html: string }[]) {
   if (!RESEND_API_KEY) return { ok: false, sent: 0, error: 'RESEND_API_KEY missing' }
   let sent = 0
@@ -165,8 +180,16 @@ async function resendBatch(emails: { to: string; subject: string; html: string }
       body: JSON.stringify(group.map((e) => ({ from: EMAIL_FROM, to: [e.to], reply_to: REPLY_TO, subject: e.subject, html: e.html }))),
     })
     const text = await res.text()
-    if (res.ok) sent += group.length
-    else { console.error('Resend error', res.status, text); errors.push(`Resend ${res.status}: ${text.slice(0, 160)}`) }
+    if (res.ok) { sent += group.length; await pause(600); continue }
+    console.error('Resend batch error', res.status, text)
+    let firstError = ''
+    for (const e of group) {
+      await pause(600)
+      const r = await resendOne(e)
+      if (r.ok) sent++
+      else if (!firstError) firstError = `Resend ${r.status} for ${e.to}: ${r.text.slice(0, 160)}`
+    }
+    if (firstError) errors.push(firstError)
   }
   return { ok: errors.length === 0, sent, error: errors.join(' | ') }
 }
@@ -259,9 +282,10 @@ Deno.serve(async (req) => {
     }
 
     if (wantEmail) {
-      const emails = [...new Set(list.map((x) => (x.email || '').trim().toLowerCase()).filter((e) => /.+@.+\..+/.test(e)))]
+      const emails = [...new Set(list.map((x) => (x.email || '').trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))]
+      if (!emails.length) errors.push(`No email address found for the ${list.length} people in this audience`)
       const html = emailShell(n.title || 'SportCliq update', `<p style="margin:0">${esc(n.message).replace(/\n/g, '<br>')}</p>`, { label: 'Open SportCliq', url: link }, { preheader: n.message })
-      const r = await resendBatch(emails.map((to) => ({ to, subject: n.title, html })))
+      const r = emails.length ? await resendBatch(emails.map((to) => ({ to, subject: n.title || 'SportCliq update', html }))) : { ok: true, sent: 0, error: '' }
       emailSent = r.sent
       if (!r.ok) errors.push(r.error || 'Email failed')
     }
