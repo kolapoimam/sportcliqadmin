@@ -1,38 +1,48 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Eye, Search } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import Papa from 'papaparse'
+import { Ban, Download, Eye, KeyRound, Pencil, Send, UserCheck, Users } from 'lucide-react'
 import { AdminLayout } from '@/components/AdminLayout'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input, DatePicker, Textarea } from '@/components/ui/input'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { DatePicker, Field, Input, SearchInput, Textarea } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Alert } from '@/components/ui/alert'
+import { Badge, StatusBadge } from '@/components/ui/badge'
+import { Avatar } from '@/components/ui/avatar'
 import { DataTable, type Column } from '@/components/ui/data-table'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Detail, Field, Loading, PageHeader } from '@/components/ui/page'
+import { Modal } from '@/components/ui/dialog'
+import { Menu } from '@/components/ui/menu'
+import { Alert, useConfirm, useToast } from '@/components/ui/feedback'
+import { Detail, EmptyState, FilterBar, Loading, PageHeader, Pagination, Segmented } from '@/components/ui/page'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { adminOperations, type UserRow } from '@/lib/adminOperations'
-import { dateBounds, errorMessage, formatDate, formatDateTime, naira, type DateFilter } from '@/lib/utils'
+import { dateBounds, downloadBlob, errorMessage, formatDate, formatDateTime, naira, type DateFilter } from '@/lib/utils'
 
-const PER_PAGE = 20
 const STATUSES = ['Registered', 'Checked In', 'Absent'] as const
+const CATEGORIES = [
+  { value: 'all', label: 'All users' },
+  { value: 'organizer', label: 'Organizers' },
+  { value: 'host', label: 'Hosts' },
+  { value: 'cycler', label: 'Cyclers' },
+  { value: 'player', label: 'Players' },
+  { value: 'venue_owner', label: 'Venue Owners' },
+]
 
 function StatusSelect({ user, onChange }: { user: UserRow; onChange: (u: UserRow, s: string) => void }) {
   if (!user.event_status) return <span className="text-muted-foreground">N/A</span>
   return (
-    <Select
-      ariaLabel={`Event status for ${user.name}`}
-      value={user.event_status}
-      onValueChange={(v) => onChange(user, v)}
-      options={STATUSES.map((s) => ({ value: s, label: s }))}
-      className="h-8 min-w-32"
-    />
+    <div onClick={(e) => e.stopPropagation()}>
+      <Select ariaLabel={`Event status for ${user.name}`} value={user.event_status} onValueChange={(v) => onChange(user, v)} options={STATUSES.map((s) => ({ value: s, label: s }))} className="h-9 min-w-[132px] rounded-lg" />
+    </div>
   )
 }
 
 export default function AdminUserManagement() {
+  const confirm = useConfirm()
+  const toast = useToast()
   const [users, setUsers] = useState<UserRow[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [category, setCategory] = useState('all')
   const [dateFilter, setDateFilter] = useState<DateFilter>('all')
   const [customStart, setCustomStart] = useState('')
@@ -42,9 +52,10 @@ export default function AdminUserManagement() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<UserRow | null>(null)
-  const [action, setAction] = useState('suspend')
-  const [notifyText, setNotifyText] = useState('')
-  const [actionMsg, setActionMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
+  const [editing, setEditing] = useState<UserRow | null>(null)
+  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', nickname: '', phone: '', state: '' })
+  const [messaging, setMessaging] = useState<UserRow | null>(null)
+  const [msg, setMsg] = useState({ title: 'Message from Sport Cliq', message: '' })
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -52,14 +63,14 @@ export default function AdminUserManagement() {
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => setPage(1), [category, dateFilter, customStart, customEnd, debounced])
+  useEffect(() => setPage(1), [category, dateFilter, customStart, customEnd, debounced, pageSize])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const { start, end } = dateBounds(dateFilter, customStart, customEnd)
-      const res = await adminOperations.getUsers({ page, perPage: PER_PAGE, category, start, end, search: debounced })
+      const res = await adminOperations.getUsers({ page, perPage: pageSize, category, start, end, search: debounced })
       setUsers(res.rows || [])
       setTotal(res.total || 0)
     } catch (e) {
@@ -67,235 +78,301 @@ export default function AdminUserManagement() {
     } finally {
       setLoading(false)
     }
-  }, [page, category, dateFilter, customStart, customEnd, debounced])
+  }, [page, pageSize, category, dateFilter, customStart, customEnd, debounced])
 
   useEffect(() => {
     load()
   }, [load])
 
-  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
+  const patch = (id: string, p: Partial<UserRow>) => {
+    setUsers((list) => list.map((u) => (u.id === id ? { ...u, ...p } : u)))
+    setSelected((s) => (s && s.id === id ? { ...s, ...p } : s))
+  }
 
   const changeStatus = async (user: UserRow, status: string) => {
-    setError(null)
     if (!user.event_type || !user.event_id) {
-      setError('Event type or ID missing for status update.')
+      toast.error('Event type or ID missing for status update.')
       return
     }
     console.log('Updating status', { user: user.id, type: user.event_type, event: user.event_id, status })
     const prev = user.event_status
-    const apply = (s: UserRow['event_status']) => {
-      setUsers((list) => list.map((u) => (u.id === user.id ? { ...u, event_status: s } : u)))
-      setSelected((sel) => (sel && sel.id === user.id ? { ...sel, event_status: s } : sel))
-    }
-    apply(status as UserRow['event_status'])
+    patch(user.id, { event_status: status as UserRow['event_status'] })
     try {
       await adminOperations.updateUserStatus(user.id, user.event_type, user.event_id, status)
+      toast.success(`${user.name || 'User'} marked ${status}`)
     } catch (e) {
       console.error('Status update failed', e)
-      apply(prev)
-      setError(errorMessage(e))
+      patch(user.id, { event_status: prev })
+      toast.error('Status not updated', errorMessage(e))
     }
   }
 
-  const performAction = async () => {
-    if (!selected) return
-    setBusy(true)
-    setActionMsg(null)
-    const targetTable = selected.event_type === 'match' ? 'user_joined_matches' : selected.event_type === 'cycling' ? 'user_joined_cycling' : 'profiles'
+  const targetTable = (u: UserRow) => (u.event_type === 'match' ? 'user_joined_matches' : u.event_type === 'cycling' ? 'user_joined_cycling' : 'profiles')
+
+  const suspendToggle = async (u: UserRow) => {
+    const suspend = (u.account_status || 'active') === 'active'
+    const { ok } = await confirm({
+      title: suspend ? `Suspend ${u.name || 'this user'}?` : `Activate ${u.name || 'this user'}?`,
+      description: suspend ? 'Their account will be marked suspended. You can activate it again at any time.' : 'Their account will be active again.',
+      confirmText: suspend ? 'Suspend' : 'Activate',
+      tone: suspend ? 'danger' : 'success',
+    })
+    if (!ok) return
     try {
-      if (action === 'reset_password') {
-        if (!selected.email) throw new Error('This user has no email address.')
-        await adminOperations.sendPasswordReset(selected.email, false)
-      }
-      if (action === 'send_notification') {
-        if (!notifyText.trim()) throw new Error('Write a message first.')
-        await adminOperations.sendNotification({ type: 'push', target: 'user', targetId: selected.id, title: 'Message from Sport Cliq', message: notifyText.trim() })
-      }
-      await adminOperations.performCustomAction(selected.id, action, targetTable)
-      if (action === 'suspend' || action === 'activate') {
-        const status = action === 'suspend' ? 'suspended' : 'active'
-        setUsers((list) => list.map((u) => (u.id === selected.id ? { ...u, account_status: status } : u)))
-        setSelected({ ...selected, account_status: status })
-      }
-      setNotifyText('')
-      setActionMsg({ kind: 'success', text: 'Action completed.' })
+      await adminOperations.performCustomAction(u.id, suspend ? 'suspend' : 'activate', targetTable(u))
+      patch(u.id, { account_status: suspend ? 'suspended' : 'active' })
+      toast.success(suspend ? 'User suspended' : 'User activated')
     } catch (e) {
-      console.error(e)
-      setActionMsg({ kind: 'error', text: `Failed to perform action. ${errorMessage(e)}` })
+      toast.error('Failed to perform action', errorMessage(e))
+    }
+  }
+
+  const resetPassword = async (u: UserRow) => {
+    if (!u.email) return toast.error('This user has no email address')
+    const { ok } = await confirm({ title: 'Send password reset?', description: `A reset link goes to ${u.email}.`, confirmText: 'Send link', icon: <KeyRound /> })
+    if (!ok) return
+    try {
+      await adminOperations.sendPasswordReset(u.email, false)
+      await adminOperations.performCustomAction(u.id, 'reset_password', targetTable(u))
+      toast.success('Reset link sent', u.email)
+    } catch (e) {
+      toast.error('Failed to perform action', errorMessage(e))
+    }
+  }
+
+  const openEdit = (u: UserRow) => {
+    const [first, ...rest] = (u.name || '').split(' ')
+    setEditForm({ first_name: first || '', last_name: rest.join(' '), nickname: '', phone: u.phone || '', state: '' })
+    setEditing(u)
+  }
+
+  const saveEdit = async () => {
+    if (!editing) return
+    setBusy(true)
+    try {
+      const data: Record<string, string> = { first_name: editForm.first_name, last_name: editForm.last_name, phone: editForm.phone }
+      if (editForm.nickname) data.nickname = editForm.nickname
+      if (editForm.state) data.state = editForm.state
+      await adminOperations.updateUser(editing.id, data)
+      patch(editing.id, { name: `${editForm.first_name} ${editForm.last_name}`.trim(), phone: editForm.phone || null })
+      setEditing(null)
+      toast.success('Profile updated')
+    } catch (e) {
+      toast.error('Could not save', /check constraint/i.test(errorMessage(e)) ? 'Names can only contain letters and phone numbers only digits.' : errorMessage(e))
     } finally {
       setBusy(false)
     }
   }
 
-  const columns: Column<UserRow>[] = useMemo(
-    () => [
-      {
-        key: 'name',
-        header: 'Name',
-        cell: (u) => (
-          <div>
-            <p className="font-semibold">{u.name || 'Unnamed'}</p>
-            {u.account_status && u.account_status !== 'active' ? <Badge variant="danger">{u.account_status}</Badge> : null}
-          </div>
-        ),
-      },
-      { key: 'event', header: 'Event', cell: (u) => u.event_title || 'N/A' },
-      { key: 'venue', header: 'Venue/Landmark', cell: (u) => u.location || 'N/A', hideOnMobile: true, wideOnly: true },
-      { key: 'value', header: 'Value', cell: (u) => (u.event_title ? naira(u.value) : 'N/A'), hideOnMobile: true, wideOnly: true },
-      { key: 'slots', header: 'Slots Paid For', cell: (u) => u.slots ?? 'N/A', hideOnMobile: true },
-      { key: 'status', header: 'Status', cell: (u) => <StatusSelect user={u} onChange={changeStatus} /> },
-      { key: 'earned', header: 'Total Earned', cell: (u) => naira(u.total_earned) },
-      { key: 'spent', header: 'Total Spent', cell: (u) => naira(u.total_spent), hideOnMobile: true, wideOnly: true },
-      { key: 'code', header: 'Super Code', cell: (u) => u.super_code || 'N/A', hideOnMobile: true, wideOnly: true },
-      { key: 'cashout', header: 'Last Cashout', cell: (u) => formatDate(u.last_cashout), hideOnMobile: true, wideOnly: true },
-      { key: 'activity', header: 'Last Activity', cell: (u) => formatDate(u.last_activity), hideOnMobile: true },
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+  const sendMessage = async () => {
+    if (!messaging) return
+    setBusy(true)
+    try {
+      await adminOperations.sendNotification({ type: 'push', target: 'user', targetId: messaging.id, title: msg.title.trim(), message: msg.message.trim() })
+      await adminOperations.performCustomAction(messaging.id, 'send_notification', targetTable(messaging))
+      setMessaging(null)
+      setMsg({ title: 'Message from Sport Cliq', message: '' })
+      toast.success('Notification sent')
+    } catch (e) {
+      toast.error('Failed to perform action', errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const exportCsv = () => {
+    const csv = Papa.unparse(users.map((u) => ({
+      Name: u.name, Email: u.email ?? '', Phone: u.phone ?? '', Categories: u.categories.join(' / '), Event: u.event_title ?? '', Status: u.event_status ?? '',
+      'Total Earned': u.total_earned, 'Total Spent': u.total_spent, 'Super Code': u.super_code ?? '', 'Last Activity': formatDateTime(u.last_activity),
+    })))
+    downloadBlob('﻿' + csv, `users-page-${page}.csv`, 'text/csv;charset=utf-8')
+  }
+
+  const rowMenu = (u: UserRow) => (
+    <Menu
+      items={[
+        { label: 'View details', icon: <Eye />, onSelect: () => setSelected(u) },
+        { label: 'Edit profile', icon: <Pencil />, onSelect: () => openEdit(u) },
+        { label: 'Send notification', icon: <Send />, onSelect: () => setMessaging(u) },
+        { label: 'Reset password', icon: <KeyRound />, onSelect: () => resetPassword(u), disabled: !u.email },
+        'separator',
+        (u.account_status || 'active') === 'active'
+          ? { label: 'Suspend user', icon: <Ban />, tone: 'danger', onSelect: () => suspendToggle(u) }
+          : { label: 'Activate user', icon: <UserCheck />, tone: 'success', onSelect: () => suspendToggle(u) },
+      ]}
+    />
   )
+
+  const columns: Column<UserRow>[] = [
+    {
+      key: 'name',
+      header: 'User',
+      sort: (u) => u.name,
+      cell: (u) => (
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar name={u.name || u.email} className="h-10 w-10" />
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 truncate font-bold">
+              {u.name || 'Unnamed'}
+              {u.account_status && u.account_status !== 'active' ? <StatusBadge status={u.account_status} /> : null}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">{u.email || u.phone || 'No contact'}</p>
+          </div>
+        </div>
+      ),
+    },
+    { key: 'cat', header: 'Category', cell: (u) => (u.categories.length ? <div className="flex flex-wrap gap-1">{u.categories.slice(0, 2).map((c) => <Badge key={c} variant="secondary">{c}</Badge>)}{u.categories.length > 2 ? <Badge variant="outline">+{u.categories.length - 2}</Badge> : null}</div> : <span className="text-muted-foreground">New</span>), hideOnMobile: true },
+    { key: 'event', header: 'Event', sort: (u) => u.event_title, cell: (u) => <span className="line-clamp-2">{u.event_title || 'N/A'}</span> },
+    { key: 'venue', header: 'Venue/Landmark', cell: (u) => u.location || 'N/A', hideOnMobile: true, wideOnly: true },
+    { key: 'value', header: 'Value', sort: (u) => u.value, cell: (u) => (u.event_title ? naira(u.value) : 'N/A'), hideOnMobile: true, wideOnly: true },
+    { key: 'slots', header: 'Slots', cell: (u) => u.slots ?? 'N/A', hideOnMobile: true },
+    { key: 'status', header: 'Status', cell: (u) => <StatusSelect user={u} onChange={changeStatus} /> },
+    { key: 'earned', header: 'Earned', sort: (u) => u.total_earned, cell: (u) => <span className="font-semibold">{naira(u.total_earned)}</span> },
+    { key: 'spent', header: 'Spent', sort: (u) => u.total_spent, cell: (u) => naira(u.total_spent), hideOnMobile: true, wideOnly: true },
+    { key: 'code', header: 'Super Code', cell: (u) => (u.super_code ? <code className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-bold">{u.super_code}</code> : 'N/A'), hideOnMobile: true, wideOnly: true },
+    { key: 'cashout', header: 'Last Cashout', sort: (u) => u.last_cashout, cell: (u) => formatDate(u.last_cashout), hideOnMobile: true, wideOnly: true },
+    { key: 'activity', header: 'Last Activity', sort: (u) => u.last_activity, cell: (u) => formatDate(u.last_activity), hideOnMobile: true },
+  ]
 
   return (
     <AdminLayout>
-      <PageHeader title="Users" description="Search users, track event status and manage accounts." />
+      <PageHeader eyebrow="Manage" title="Users" description="Search players, organizers, hosts and venue owners.">
+        <Button variant="outline" onClick={exportCsv} disabled={!users.length}><Download /> Export</Button>
+      </PageHeader>
 
-      <Card className="mb-4">
-        <CardContent className="grid grid-cols-1 gap-3 pt-5 md:grid-cols-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input aria-label="Search users" placeholder="Name, super code, confirmation code or PIN" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+      <Segmented className="mb-4" value={category} onChange={setCategory} options={CATEGORIES.map((c) => ({ ...c, count: c.value === category && !loading ? total : undefined }))} />
+
+      <FilterBar className="xl:grid-cols-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Name, super code, confirmation code or PIN" className="md:col-span-2 xl:col-span-2" />
+        <Select ariaLabel="Date joined" value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)} options={[
+          { value: 'all', label: 'Joined any time' }, { value: 'today', label: 'Joined today' }, { value: '7days', label: 'Last 7 days' }, { value: 'custom', label: 'Custom range' },
+        ]} />
+        {dateFilter === 'custom' ? (
+          <div className="grid grid-cols-2 gap-3 md:col-span-2 xl:col-span-3 xl:max-w-md">
+            <DatePicker label="Start date" value={customStart} onChange={setCustomStart} />
+            <DatePicker label="End date" value={customEnd} onChange={setCustomEnd} />
           </div>
-          <Select
-            ariaLabel="Category"
-            value={category}
-            onValueChange={setCategory}
-            options={[
-              { value: 'all', label: 'All categories' },
-              { value: 'organizer', label: 'Organizer' },
-              { value: 'host', label: 'Host' },
-              { value: 'cycler', label: 'Cycler' },
-              { value: 'player', label: 'Player' },
-              { value: 'venue_owner', label: 'Venue Owner' },
-            ]}
-          />
-          <Select
-            ariaLabel="Date joined"
-            value={dateFilter}
-            onValueChange={(v) => setDateFilter(v as DateFilter)}
-            options={[
-              { value: 'all', label: 'No date filter' },
-              { value: 'today', label: 'Today' },
-              { value: '7days', label: 'Last 7 days' },
-              { value: 'custom', label: 'Custom range' },
-            ]}
-          />
-          {dateFilter === 'custom' ? (
-            <div className="grid grid-cols-2 gap-3 md:col-span-3 md:max-w-md">
-              <DatePicker label="Start date" value={customStart} onChange={setCustomStart} />
-              <DatePicker label="End date" value={customEnd} onChange={setCustomEnd} />
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+        ) : null}
+      </FilterBar>
 
       {error ? <Alert className="mb-4">{error}</Alert> : null}
 
       <Card>
-        <CardHeader>
-          <CardTitle>
-            Users ({users.length} of {total.toLocaleString()})
-          </CardTitle>
-        </CardHeader>
+        <CardHeader icon={<Users />} title={`Users (${users.length} of ${total.toLocaleString()})`} description="Tap a user to see everything about them." />
         <CardContent>
           {loading ? (
-            <Loading />
+            <Loading rows={6} />
           ) : (
             <DataTable
               columns={columns}
               rows={users}
               rowKey={(u) => u.id}
-              actions={(u) => (
-                <Button variant="ghost" size="icon" aria-label={`View ${u.name}`} onClick={() => { setSelected(u); setActionMsg(null) }}>
-                  <Eye />
-                </Button>
-              )}
+              onRowClick={setSelected}
+              actions={rowMenu}
+              empty={<EmptyState icon={<Users />} title="No users found" text="Try a different category, date or search." />}
             />
           )}
-          <div className="mt-4 flex items-center justify-between gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
-              <ChevronLeft /> Previous
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              Page {page} of {totalPages}
-            </span>
-            <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage((p) => p + 1)}>
-              Next <ChevronRight />
-            </Button>
-          </div>
+          <Pagination page={page} pageSize={pageSize} total={total} onPage={setPage} onPageSize={setPageSize} sizes={[10, 20, 50, 100]} />
         </CardContent>
       </Card>
 
-      <Dialog open={Boolean(selected)} onOpenChange={(o) => !o && setSelected(null)}>
-        <DialogContent className="max-w-3xl">
-          {selected ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>{selected.name || 'Unnamed user'}</DialogTitle>
-                <DialogDescription>Account details, activity and admin actions.</DialogDescription>
-              </DialogHeader>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/* Details */}
+      <Modal
+        open={Boolean(selected)}
+        onOpenChange={(o) => !o && setSelected(null)}
+        size="xl"
+        title={selected ? <span className="flex items-center gap-3"><Avatar name={selected.name || selected.email} className="h-11 w-11" />{selected.name || 'Unnamed user'}</span> : ''}
+        description="Account details, activity and admin actions."
+        footer={selected ? (
+          <>
+            <Button variant="outline" onClick={() => setMessaging(selected)}><Send /> Message</Button>
+            <Button variant="outline" onClick={() => openEdit(selected)}><Pencil /> Edit</Button>
+            {(selected.account_status || 'active') === 'active'
+              ? <Button variant="soft-danger" onClick={() => suspendToggle(selected)}><Ban /> Suspend</Button>
+              : <Button variant="soft" onClick={() => suspendToggle(selected)}><UserCheck /> Activate</Button>}
+          </>
+        ) : null}
+      >
+        {selected ? (
+          <Tabs defaultValue="overview">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="activity">Activity</TabsTrigger>
+            </TabsList>
+            <TabsContent value="overview">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <Detail label="Name">{selected.name || 'N/A'}</Detail>
                 <Detail label="Email">{selected.email || 'N/A'}</Detail>
                 <Detail label="Phone">{selected.phone || 'N/A'}</Detail>
                 <Detail label="Category">{selected.categories.length ? selected.categories.join(', ') : 'N/A'}</Detail>
+                <Detail label="Account Status"><StatusBadge status={selected.account_status || 'active'} /></Detail>
+                <Detail label="Joined">{formatDate(selected.created_at)}</Detail>
+              </div>
+              <p className="mb-2 mt-5 text-xs font-bold uppercase tracking-wide text-muted-foreground">Badges</p>
+              <div className="flex flex-wrap gap-2">
+                {selected.badges.length ? selected.badges.map((b) => <Badge key={b} variant="outline">{b}</Badge>) : <span className="text-sm text-muted-foreground">No badges yet</span>}
+              </div>
+            </TabsContent>
+            <TabsContent value="activity">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
                 <Detail label="Events Organized">{selected.events_organized}</Detail>
                 <Detail label="Events Participated">{selected.events_participated}</Detail>
                 <Detail label="Total Earned">{naira(selected.total_earned)}</Detail>
                 <Detail label="Total Spent">{naira(selected.total_spent)}</Detail>
                 <Detail label="Super Code">{selected.super_code || 'N/A'}</Detail>
+                <Detail label="Access PIN">{selected.access_pin || 'N/A'}</Detail>
                 <Detail label="Last Cashout">{formatDateTime(selected.last_cashout)}</Detail>
                 <Detail label="Last Activity">{formatDateTime(selected.last_activity)}</Detail>
-                <Detail label="Account Status">{selected.account_status || 'active'}</Detail>
-                {selected.event_status ? (
-                  <Detail label={`Event Status (${selected.event_title})`}>
-                    <StatusSelect user={selected} onChange={changeStatus} />
-                  </Detail>
-                ) : null}
+                <Detail label="Confirmation Code">{selected.confirmation_code || 'N/A'}</Detail>
               </div>
-              <div className="mt-5">
-                <p className="mb-2 text-xs text-muted-foreground">Badges</p>
-                <div className="flex flex-wrap gap-2">
-                  {selected.badges.length ? selected.badges.map((b) => <Badge key={b} variant="outline">{b}</Badge>) : <span className="text-sm text-muted-foreground">No badges yet</span>}
+              {selected.event_status ? (
+                <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-playarena-50 p-4 sm:flex-row sm:items-center dark:bg-playarena-950/50">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold uppercase tracking-wide text-primary">Latest event</p>
+                    <p className="font-bold">{selected.event_title}</p>
+                    <p className="text-xs text-muted-foreground">{selected.location} · {selected.slots} slot(s) · {naira(selected.value)}</p>
+                  </div>
+                  <StatusSelect user={selected} onChange={changeStatus} />
                 </div>
-              </div>
-              <div className="mt-6 space-y-3 border-t pt-5">
-                <Field label="Admin action">
-                  <Select
-                    ariaLabel="Admin action"
-                    value={action}
-                    onValueChange={setAction}
-                    options={[
-                      { value: 'suspend', label: 'Suspend User' },
-                      { value: 'activate', label: 'Activate User' },
-                      { value: 'reset_password', label: 'Reset Password' },
-                      { value: 'send_notification', label: 'Send Notification' },
-                    ]}
-                  />
-                </Field>
-                {action === 'send_notification' ? (
-                  <Field label="Message">
-                    <Textarea maxLength={500} value={notifyText} onChange={(e) => setNotifyText(e.target.value)} />
-                  </Field>
-                ) : null}
-                {actionMsg ? <Alert variant={actionMsg.kind}>{actionMsg.text}</Alert> : null}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setSelected(null)}>Close</Button>
-                <Button onClick={performAction} disabled={busy}>{busy ? 'Working...' : 'Perform Action'}</Button>
-              </DialogFooter>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+              ) : null}
+              <Button variant="outline" className="mt-4" onClick={() => resetPassword(selected)} disabled={!selected.email}><KeyRound /> Send password reset</Button>
+            </TabsContent>
+          </Tabs>
+        ) : null}
+      </Modal>
+
+      {/* Edit */}
+      <Modal
+        open={Boolean(editing)}
+        onOpenChange={(o) => !o && setEditing(null)}
+        icon={<Pencil />}
+        title="Edit profile"
+        description="Names use letters only. Leave fields you do not want to change."
+        footer={<><Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button><Button onClick={saveEdit} loading={busy}>Save changes</Button></>}
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="First name" htmlFor="e-first"><Input id="e-first" value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} /></Field>
+          <Field label="Last name" htmlFor="e-last"><Input id="e-last" value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} /></Field>
+          <Field label="Nickname" htmlFor="e-nick"><Input id="e-nick" value={editForm.nickname} onChange={(e) => setEditForm({ ...editForm, nickname: e.target.value })} /></Field>
+          <Field label="Phone" htmlFor="e-phone"><Input id="e-phone" inputMode="numeric" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value.replace(/\D/g, '') })} /></Field>
+          <Field label="State" htmlFor="e-state" className="sm:col-span-2"><Input id="e-state" value={editForm.state} onChange={(e) => setEditForm({ ...editForm, state: e.target.value })} placeholder="e.g. Kwara" /></Field>
+        </div>
+      </Modal>
+
+      {/* Message */}
+      <Modal
+        open={Boolean(messaging)}
+        onOpenChange={(o) => !o && setMessaging(null)}
+        icon={<Send />}
+        title={`Message ${messaging?.name || 'user'}`}
+        description="Sends a push notification to this user."
+        footer={<><Button variant="outline" onClick={() => setMessaging(null)}>Cancel</Button><Button onClick={sendMessage} loading={busy} disabled={!msg.message.trim()}>Send</Button></>}
+      >
+        <div className="space-y-4">
+          <Field label="Title" htmlFor="m-title"><Input id="m-title" maxLength={120} value={msg.title} onChange={(e) => setMsg({ ...msg, title: e.target.value })} /></Field>
+          <Field label={`Message (${msg.message.length}/500)`} htmlFor="m-body"><Textarea id="m-body" maxLength={500} value={msg.message} onChange={(e) => setMsg({ ...msg, message: e.target.value })} /></Field>
+        </div>
+      </Modal>
     </AdminLayout>
   )
 }

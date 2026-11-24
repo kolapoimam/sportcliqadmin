@@ -3,11 +3,20 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import { adminOperations } from '@/lib/adminOperations'
 import { getAdminSession } from '@/lib/session'
-import { Loading } from '@/components/ui/page'
+import { Mark } from './Logo'
 
 let verified = false
 
-/** Lets the page render only when there is a Supabase session that belongs to an active admin. */
+export function Splash({ text = 'Checking your session' }: { text?: string }) {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-4">
+      <Mark className="h-14 w-14 animate-pulse" />
+      <p className="text-sm font-medium text-muted-foreground">{text}</p>
+    </div>
+  )
+}
+
+/** Renders the admin pages only when there is a Supabase session that belongs to an active admin. */
 export function RequireAdmin() {
   const location = useLocation()
   const [state, setState] = useState<'checking' | 'ok' | 'denied'>(verified && getAdminSession() ? 'ok' : 'checking')
@@ -36,11 +45,11 @@ export function RequireAdmin() {
   if (!supabaseConfigured) {
     return (
       <div className="mx-auto max-w-md p-8 text-center text-sm text-red-600">
-        Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+        Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel, then redeploy.
       </div>
     )
   }
-  if (state === 'checking') return <Loading label="Checking your session..." />
+  if (state === 'checking') return <Splash />
   if (state === 'denied') return <Navigate to="/login" replace state={{ from: location.pathname }} />
   return <Outlet />
 }

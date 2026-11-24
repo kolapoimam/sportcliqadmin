@@ -21,6 +21,7 @@ React, TypeScript, Vite, Tailwind and Supabase. Font is Plus Jakarta Sans and co
 | `/audit` | Audit log with filters and CSV export | Admins (export is super admin only) |
 | `/admins` | Manage admin accounts | Super admins |
 | `/profile` | Avatar, name and password | Admins |
+| `/settings` | Commission rates, dark mode, help | Admins (rates are super admin only) |
 
 Old `/admin/...` links redirect to the new paths.
 
@@ -31,52 +32,40 @@ The browser never holds the service role key. Admin rights are checked in the da
 * Admins sign in with Supabase Auth. `admins.user_id` links an admin to their login.
 * Every admin feature calls a `public.admin_*` database function. Each one checks the caller is an active admin (or super admin) before doing anything.
 * The `adminSession` saved in localStorage only decides which menu items show. Editing it gives no extra access.
-* Creating admins and the first admin setup run in Supabase Edge Functions, which hold the service role key on the server.
+* Creating admins and the first admin setup run in `security definer` database functions. The setup secret is stored hashed and is never sent to the browser.
 
 ## Setup
 
 ### 1. Database
 
-In the Supabase SQL editor run these files **in order, one at a time**:
+In the Supabase SQL editor run these files **in order, one at a time**. All of them are additive and safe to run again.
 
 1. `supabase/migrations/20261113000001_admin_enum_labels.sql`
 2. `supabase/migrations/20261113000002_admin_portal.sql`
-3. `supabase/migrations/20261113000003_link_existing_admins_optional.sql` only if you already had rows in `admins`
+3. `supabase/migrations/20261124000001_admin_portal_v2.sql`
 
-All of it is additive and safe to run again. See the PR description for the full list of changes.
+Then set your setup secret, using your own phrase of 12 characters or more:
 
-### 2. Edge functions
-
-```bash
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-supabase secrets set ADMIN_SETUP_SECRET="a-long-random-string-of-32-plus-characters"
-supabase secrets set ADMIN_ALLOWED_ORIGINS="https://admin.sportcliq.com,http://localhost:5173"
-supabase functions deploy admin-create
-supabase functions deploy admin-setup --no-verify-jwt
+```sql
+select admin_set_setup_secret('your-long-secret-phrase');
 ```
 
-`admin-setup` needs `--no-verify-jwt` because nobody is signed in yet when it runs. It is protected by the secret key and only works while the admins table is empty.
+No edge functions are needed. First admin setup and creating admins run in the database.
 
-### 3. Supabase Auth settings
+### 2. Supabase Auth settings
 
-In Authentication > URL Configuration add `https://admin.sportcliq.com/reset-password` to Redirect URLs so password reset emails land on the portal.
+* Authentication > URL Configuration: add `https://admin.sportcliq.com/reset-password` and `https://admin.sportcliq.com/login` to Redirect URLs.
+* Authentication > Providers > Email: sign ups must be allowed. The portal signs a new admin up, then the database confirms them.
 
-### 4. Hosting on Vercel
+### 3. Vercel
 
-1. Import this repo in Vercel. It detects Vite.
-2. Add environment variables from `.env.example`:
-   * `VITE_SUPABASE_URL`
-   * `VITE_SUPABASE_ANON_KEY`
-   * `VITE_SITE_URL` = `https://admin.sportcliq.com`
-   * `VITE_MAIN_APP_URL` = `https://sportcliq.com`
-3. Add the domain `admin.sportcliq.com` in Project Settings > Domains and create the CNAME record Vercel shows you.
+Environment variables from `.env.example`: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SITE_URL` (`https://admin.sportcliq.com`) and `VITE_MAIN_APP_URL` (`https://sportcliq.com`). Redeploy after changing them.
 
-`vercel.json` sends every path to `index.html` and adds security headers.
+### 4. First admin
 
-### 5. First admin
+Open `https://admin.sportcliq.com/setup`, fill in your details and the setup secret. You are signed in straight away. Setup stays open until there is an active admin linked to a login, so older rows in the `admins` table no longer block it. If you use an email that already has a Sport Cliq login, its password becomes the one you enter.
 
-Open `https://admin.sportcliq.com/setup`, enter your email, a password and the `ADMIN_SETUP_SECRET`. Then sign in and add other admins from the Admins page.
+After 10 wrong secrets setup locks. Run `admin_set_setup_secret` again to unlock it.
 
 ## Local development
 
@@ -89,6 +78,6 @@ npm run dev
 ## Things to know
 
 * **Delivery of push and email.** The Notifications page records each notification in the `notifications` table with its recipient count. Sending the actual push or email needs your existing provider to pick those rows up.
-* **Commission rates** live in the new `admin_settings` table. They start at 10% for match, cycling and venue. Change them in the SQL editor with `update admin_settings set value = '{"match":10,"cycling":10,"venue":10}' where key = 'commission_rates';`
+* **Commission rates** live in `admin_settings` and are edited by super admins on the Settings page. Commission is revenue for each stream (paid match slots and tickets, paid cycling registrations, paid venue bookings) times that stream's rate.
 * **Sport** comes from the new `matches.sport` column. Empty means Football until the main app starts filling it.
 * **Admin alerts** for the bell come from triggers on new users, matches, cycling events, bookings, venues and cashouts. They are wrapped so they can never block the main app.

@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Logo } from '@/components/Logo'
+import { KeyRound, MailCheck } from 'lucide-react'
+import { AuthShell } from '@/components/AuthShell'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Alert } from '@/components/ui/alert'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field } from '@/components/ui/page'
+import { Field, Input } from '@/components/ui/input'
+import { Alert } from '@/components/ui/feedback'
+import { Card } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
 import { adminOperations } from '@/lib/adminOperations'
 import { errorMessage } from '@/lib/utils'
 
-/** Handles both asking for a reset email and setting a new password from the email link. */
 export default function ResetPassword() {
   const navigate = useNavigate()
   const [recovery, setRecovery] = useState(() => window.location.hash.includes('type=recovery'))
@@ -43,14 +42,14 @@ export default function ResetPassword() {
 
   const setNewPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (password.length < 6) return setMessage({ kind: 'error', text: 'Password must be at least 6 characters.' })
+    if (password.length < 8) return setMessage({ kind: 'error', text: 'Password must be at least 8 characters.' })
     if (password !== confirm) return setMessage({ kind: 'error', text: 'Passwords do not match.' })
     setBusy(true)
     try {
       const { error } = await supabase.auth.updateUser({ password })
       if (error) throw error
       await supabase.auth.signOut()
-      setMessage({ kind: 'success', text: 'Password updated. You can sign in now.' })
+      setMessage({ kind: 'success', text: 'Password updated. Taking you to sign in.' })
       setTimeout(() => navigate('/login', { replace: true }), 1500)
     } catch (err) {
       setMessage({ kind: 'error', text: errorMessage(err) })
@@ -60,47 +59,29 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-playarena-50 to-playarena-100 p-4 dark:from-gray-900 dark:to-gray-800">
-      <div className="w-full max-w-md space-y-4">
-        <div className="flex justify-center">
-          <Logo className="h-12" />
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>{recovery ? 'Set a new password' : 'Reset your password'}</CardTitle>
-            <CardDescription>{recovery ? 'Choose a new password for your admin account.' : 'We will email you a reset link.'}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recovery ? (
-              <form onSubmit={setNewPassword} className="space-y-4">
-                <Field label="New password" htmlFor="pw">
-                  <Input id="pw" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-                </Field>
-                <Field label="Confirm password" htmlFor="pw2">
-                  <Input id="pw2" type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-                </Field>
-                {message ? <Alert variant={message.kind}>{message.text}</Alert> : null}
-                <Button type="submit" className="w-full" disabled={busy}>
-                  {busy ? 'Saving...' : 'Update Password'}
-                </Button>
-              </form>
-            ) : (
-              <form onSubmit={requestEmail} className="space-y-4">
-                <Field label="Email" htmlFor="email">
-                  <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-                </Field>
-                {message ? <Alert variant={message.kind}>{message.text}</Alert> : null}
-                <Button type="submit" className="w-full" disabled={busy}>
-                  {busy ? 'Sending...' : 'Send Reset Link'}
-                </Button>
-              </form>
-            )}
-            <p className="mt-4 text-center text-sm">
-              <Link to="/login" className="font-semibold text-primary hover:underline">Back to login</Link>
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+    <AuthShell>
+      <Card className="p-7 sm:p-8">
+        <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-playarena-50 text-primary dark:bg-playarena-950">
+          {recovery ? <KeyRound className="h-6 w-6" /> : <MailCheck className="h-6 w-6" />}
+        </span>
+        <h1 className="text-2xl font-extrabold tracking-tight">{recovery ? 'Set a new password' : 'Reset your password'}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{recovery ? 'Choose a new password for your admin account.' : 'We will email you a secure reset link.'}</p>
+        {recovery ? (
+          <form onSubmit={setNewPassword} className="mt-6 space-y-4">
+            <Field label="New password" htmlFor="pw"><Input id="pw" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+            <Field label="Confirm password" htmlFor="pw2"><Input id="pw2" type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
+            {message ? <Alert variant={message.kind}>{message.text}</Alert> : null}
+            <Button type="submit" size="lg" className="w-full" loading={busy}>Update Password</Button>
+          </form>
+        ) : (
+          <form onSubmit={requestEmail} className="mt-6 space-y-4">
+            <Field label="Email" htmlFor="email"><Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+            {message ? <Alert variant={message.kind}>{message.text}</Alert> : null}
+            <Button type="submit" size="lg" className="w-full" loading={busy}>Send Reset Link</Button>
+          </form>
+        )}
+        <p className="mt-5 text-center text-sm"><Link to="/login" className="font-semibold text-primary hover:underline">Back to login</Link></p>
+      </Card>
+    </AuthShell>
   )
 }

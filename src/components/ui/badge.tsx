@@ -2,22 +2,43 @@ import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
-const badgeVariants = cva('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold [&_svg]:size-3', {
+const badgeVariants = cva('inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold leading-none [&_svg]:size-3', {
   variants: {
     variant: {
       default: 'bg-primary text-white',
-      secondary: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-100',
-      destructive: 'bg-red-600 text-white',
+      secondary: 'bg-muted text-gray-700 dark:text-gray-300',
       outline: 'border text-foreground',
-      success: 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
-      warning: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300',
-      danger: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
-      info: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300',
+      success: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/15 dark:bg-emerald-950/60 dark:text-emerald-300',
+      warning: 'bg-amber-50 text-amber-700 ring-1 ring-amber-600/15 dark:bg-amber-950/60 dark:text-amber-300',
+      danger: 'bg-red-50 text-red-700 ring-1 ring-red-600/15 dark:bg-red-950/60 dark:text-red-300',
+      info: 'bg-sky-50 text-sky-700 ring-1 ring-sky-600/15 dark:bg-sky-950/60 dark:text-sky-300',
+      violet: 'bg-violet-50 text-violet-700 ring-1 ring-violet-600/15 dark:bg-violet-950/60 dark:text-violet-300',
+      dark: 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
     },
   },
-  defaultVariants: { variant: 'default' },
+  defaultVariants: { variant: 'secondary' },
 })
 
-export function Badge({ className, variant, ...p }: React.HTMLAttributes<HTMLSpanElement> & VariantProps<typeof badgeVariants>) {
-  return <span className={cn(badgeVariants({ variant }), className)} {...p} />
+export type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>['variant']>
+
+export function Badge({ className, variant, dot, children, ...p }: React.HTMLAttributes<HTMLSpanElement> & VariantProps<typeof badgeVariants> & { dot?: boolean }) {
+  return (
+    <span className={cn(badgeVariants({ variant }), className)} {...p}>
+      {dot ? <span className="h-1.5 w-1.5 rounded-full bg-current" /> : null}
+      {children}
+    </span>
+  )
+}
+
+/** Maps common status words to a colour. */
+export function StatusBadge({ status, className }: { status: string | null | undefined; className?: string }) {
+  const s = (status || 'unknown').toLowerCase().replace(/[^a-z]/g, '')
+  const map: Record<string, BadgeVariant> = {
+    active: 'success', verified: 'success', approved: 'success', live: 'success', sent: 'success', checkedin: 'success', paid: 'success', success: 'success',
+    pending: 'warning', upcoming: 'info', registered: 'info', processing: 'info',
+    rejected: 'danger', cancelled: 'danger', canceled: 'danger', inactive: 'danger', suspended: 'danger', failed: 'danger', absent: 'danger', noshow: 'danger',
+    passed: 'secondary', completed: 'secondary',
+  }
+  const label = (status || 'Unknown').replace(/_/g, ' ')
+  return <Badge variant={map[s] ?? 'secondary'} dot className={cn('capitalize', className)}>{label}</Badge>
 }

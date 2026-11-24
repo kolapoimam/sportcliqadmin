@@ -46,6 +46,15 @@ export function useRealtimeNotifications(onInsert?: (n: AdminNotification) => vo
     }
   }, [])
 
+  const markAllRead = useCallback(async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })))
+    try {
+      await adminOperations.markAllAlertsRead()
+    } catch (e) {
+      console.error('Failed to mark notifications as read', e)
+    }
+  }, [])
+
   const unreadCount = notifications.filter((n) => n.unread !== false).length
-  return { notifications, unreadCount, markRead }
+  return { notifications, unreadCount, markRead, markAllRead }
 }

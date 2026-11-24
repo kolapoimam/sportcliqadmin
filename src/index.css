@@ -16,36 +16,108 @@
   --color-playarena-700: #077742;
   --color-playarena-800: #0a5e37;
   --color-playarena-900: #0a4d2f;
+  --color-playarena-950: #022c19;
 
   --color-primary: #05964f;
   --color-primary-light: #0fb863;
   --color-primary-dark: #077742;
   --color-primary-foreground: #ffffff;
 
+  --color-canvas: #f3f5f4;
   --color-background: #ffffff;
   --color-foreground: #0a0a0a;
   --color-muted: #f4f4f5;
-  --color-muted-foreground: #71717a;
-  --color-border: #e4e4e7;
+  --color-muted-foreground: #6b7280;
+  --color-border: #e7e9e8;
   --color-destructive: #dc2626;
+
+  --shadow-soft: 0 1px 2px rgb(16 24 20 / 0.04), 0 8px 24px -12px rgb(16 24 20 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(16 24 20 / 0.05), 0 18px 40px -16px rgb(16 24 20 / 0.25);
+
+  --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-zoom-in: zoom-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-sheet-up: sheet-up 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-sheet-left: sheet-left 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-toast-in: toast-in 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-shimmer: shimmer 1.4s linear infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes zoom-in {
+    from { opacity: 0; transform: translate(-50%, -48%) scale(0.96); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  }
+  @keyframes sheet-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes sheet-left {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
 }
 
 @layer base {
   html.dark {
-    --color-background: #0a0a0a;
-    --color-foreground: #fafafa;
-    --color-muted: #27272a;
-    --color-muted-foreground: #a1a1aa;
-    --color-border: #3f3f46;
+    --color-canvas: #070a09;
+    --color-background: #111514;
+    --color-foreground: #f5f7f6;
+    --color-muted: #1c2220;
+    --color-muted-foreground: #9aa3a0;
+    --color-border: #232a28;
   }
   * {
     border-color: var(--color-border);
   }
+  html,
   body {
-    @apply bg-gray-50 text-foreground font-sans antialiased dark:bg-gray-900;
+    background: var(--color-canvas);
+  }
+  body {
+    @apply text-foreground font-sans antialiased;
+    -webkit-tap-highlight-color: transparent;
   }
   :focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.6;
+  }
+  html.dark input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility skeleton {
+  background: linear-gradient(90deg, var(--color-muted) 25%, color-mix(in oklab, var(--color-muted) 60%, white) 50%, var(--color-muted) 75%);
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
