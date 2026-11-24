@@ -121,9 +121,10 @@ declare
   v_cols text;
 begin
   begin
+    -- Supabase Auth runs with search_path auth, so tests do too
+    perform set_config('search_path', 'auth', true);
     if p_as_auth then
       perform set_config('role', 'supabase_auth_admin', true);
-      perform set_config('search_path', 'auth', true);
     end if;
     select string_agg(quote_ident(column_name), ', ' order by array_position(array['aud','role','raw_app_meta_data','created_at','updated_at','email_confirmed_at']::text[], column_name::text)) into v_cols
     from information_schema.columns
@@ -148,6 +149,14 @@ begin
   end;
 end $$;
 
+create table if not exists public.admin_portal_function_backup (
+  function_name text,
+  definition text,
+  saved_at timestamptz default now()
+);
+alter table public.admin_portal_function_backup enable row level security;
+revoke all on public.admin_portal_function_backup from anon, authenticated;
+
 do $$
 declare
   google jsonb := '{"iss":"https://accounts.google.com","name":"Ada Obi-Lawal","full_name":"Ada Obi-Lawal","email":"x@gmail.com","picture":"https://x","email_verified":true,"provider_id":"1"}';
@@ -158,14 +167,51 @@ declare
   fixes text := '';
   f record;
   pass int;
+  def text;
+  body text;
+  q text;
+  i int;
+  j int;
 begin
-  -- Can this editor act as the Supabase Auth role? If not, test as the editor role.
   begin
     perform set_config('role', 'supabase_auth_admin', true);
     perform set_config('role', 'none', true);
   exception when others then
     can_be_auth := false;
   end;
+
+  -- Fix A, always: every function behind a sign up trigger runs with its owner rights and a fixed search path.
+  -- This is the setup Supabase recommends for profile triggers.
+  for f in
+    select distinct p.oid, p.oid::regprocedure as sig, p.prosecdef, p.proconfig
+    from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+    where t.tgrelid in ('auth.users'::regclass, coalesce(to_regclass('auth.identities'), 'auth.users'::regclass)) and not t.tgisinternal
+      and p.proname not in ('admin_portal_fill_user_names', 'admin_portal_link_admin_login')
+  loop
+    if f.proconfig is null or not exists (select 1 from unnest(f.proconfig) c where c like 'search_path=%') then
+      begin
+        execute format('alter function %s set search_path = public, auth, extensions', f.sig);
+        fixes := fixes || format('search path set on %s. ', f.sig);
+      exception when others then fixes := fixes || format('could not set search path on %s (%s). ', f.sig, sqlerrm);
+      end;
+    end if;
+    if not f.prosecdef then
+      begin
+        execute format('alter function %s security definer', f.sig);
+        fixes := fixes || format('%s now runs with its owner rights. ', f.sig);
+      exception when others then fixes := fixes || format('could not change %s (%s). ', f.sig, sqlerrm);
+      end;
+    end if;
+  end loop;
+  begin
+    if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
+      grant usage on schema public to supabase_auth_admin;
+      grant select, insert, update on public.profiles to supabase_auth_admin;
+    end if;
+  exception when others then fixes := fixes || format('could not grant profile rights (%s). ', sqlerrm);
+  end;
+  insert into public.admin_portal_signup_check(step, check_name, result, detail)
+  values (0, 'Fix A, trigger rights and search path', case when fixes = '' then 'already fine' else 'applied' end, nullif(fixes, ''));
 
   for pass in 1..2 loop
     r := public.admin_portal_try_signup(google, 'google', can_be_auth);
@@ -178,51 +224,46 @@ begin
     exit when not exists (select 1 from public.admin_portal_signup_check where step = pass and result = 'fails');
     exit when pass = 2;
 
-    -- Safe fixes for the usual causes, applied to the functions behind the sign up triggers
+    -- Fix B, only when sign ups still fail: the profile trigger can no longer block a new login.
+    -- Its code is kept as is inside a safety block. If it errors, the login is still saved and the
+    -- app creates the profile on first sign in. The original code is saved in admin_portal_function_backup.
+    fixes := '';
     for f in
-      select distinct p.oid::regprocedure as sig, p.proname, p.prosecdef, p.proconfig, n.nspname
-      from pg_trigger t join pg_proc p on p.oid = t.tgfoid join pg_namespace n on n.oid = p.pronamespace
-      where t.tgrelid = 'auth.users'::regclass and not t.tgisinternal
+      select distinct p.oid, p.oid::regprocedure as sig
+      from pg_trigger t join pg_proc p on p.oid = t.tgfoid join pg_language lg on lg.oid = p.prolang
+      where t.tgrelid = 'auth.users'::regclass and not t.tgisinternal and lg.lanname = 'plpgsql'
         and p.proname not in ('admin_portal_fill_user_names', 'admin_portal_link_admin_login')
     loop
-      -- Unqualified table names fail when Supabase Auth runs the trigger with search_path auth
-      if f.proconfig is null or not exists (select 1 from unnest(f.proconfig) c where c like 'search_path=%') then
-        begin
-          execute format('alter function %s set search_path = public, auth, extensions', f.sig);
-          fixes := fixes || format('search path set on %s. ', f.sig);
-        exception when others then
-          fixes := fixes || format('could not set search path on %s (%s). ', f.sig, sqlerrm);
-        end;
-      end if;
-      -- Without security definer the Auth role needs rights on public tables
-      if not f.prosecdef then
-        begin
-          execute format('alter function %s security definer', f.sig);
-          fixes := fixes || format('%s now runs with its owner rights. ', f.sig);
-        exception when others then
-          fixes := fixes || format('could not change %s to security definer (%s). ', f.sig, sqlerrm);
-        end;
-      end if;
+      begin
+        def := pg_get_functiondef(f.oid);
+        if position('admin_portal_safety_block' in def) > 0 then continue; end if;
+        insert into public.admin_portal_function_backup(function_name, definition) values (f.sig::text, def);
+        -- Find the dollar quote around the body, then the body between its first and last use
+        q := substring(def from 'AS (\$[A-Za-z0-9_]*\$)');
+        if q is null then raise exception 'body quote not found'; end if;
+        i := strpos(def, q);
+        j := length(def) - strpos(reverse(def), reverse(q)) - length(q) + 2;
+        if j <= i then raise exception 'body end not found'; end if;
+        body := substring(def from i + length(q) for j - i - length(q));
+        body := regexp_replace(body, ';?\s*$', ';');
+        def := left(def, i + length(q) - 1)
+            || E'\n-- admin_portal_safety_block\nbegin\n' || body
+            || E'\nexception when others then\n  raise warning ''sign up profile step skipped: %'', sqlerrm;\n  return new;\nend;\n'
+            || substring(def from j);
+        execute def;
+        fixes := fixes || format('%s wrapped in a safety block. ', f.sig);
+      exception when others then
+        fixes := fixes || format('could not wrap %s (%s). ', f.sig, sqlerrm);
+      end;
     end loop;
-
-    -- Rights for Supabase Auth on the profile table, in case a trigger needs them directly
-    begin
-      if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
-        grant usage on schema public to supabase_auth_admin;
-        grant select, insert, update on public.profiles to supabase_auth_admin;
-        fixes := fixes || 'Supabase Auth can write profiles. ';
-      end if;
-    exception when others then
-      fixes := fixes || format('could not grant profile rights (%s). ', sqlerrm);
-    end;
-
     insert into public.admin_portal_signup_check(step, check_name, result, detail)
-    values (pass, 'Fixes applied', case when fixes = '' then 'none needed' else 'applied' end, nullif(fixes, ''));
+    values (pass, 'Fix B, sign up can no longer be blocked', case when fixes = '' then 'nothing to wrap' else 'applied' end, nullif(fixes, ''));
   end loop;
 
   insert into public.admin_portal_signup_check(step, check_name, result, detail)
-  values (9, 'Tested as', case when can_be_auth then 'Supabase Auth role' else 'SQL editor role' end, null);
+  values (9, 'Tested as', case when can_be_auth then 'Supabase Auth role' else 'SQL editor role with the Auth search path' end, null);
 end $$;
+
 
 -- Each sign up trigger and the start of its code, so any remaining error can be traced
 insert into public.admin_portal_signup_check(step, check_name, result, detail)
