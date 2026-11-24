@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable } from '@/components/ui/data-table'
 import { Alert, useToast } from '@/components/ui/feedback'
+import { useCan } from '@/hooks/useAdminSession'
 import { EmptyState, Loading, PageHeader, Pagination, Segmented, StatTile, toneStyles, usePaged } from '@/components/ui/page'
 import { adminOperations, type Analytics } from '@/lib/adminOperations'
 import { cn, downloadBlob, errorMessage, naira } from '@/lib/utils'
@@ -28,6 +29,7 @@ function periodLabel(iso: string, unit: 'week' | 'month') {
 
 export default function AnalyticsDashboard() {
   const toast = useToast()
+  const can = useCan()
   const [range, setRange] = useState('30d')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
@@ -119,10 +121,10 @@ export default function AnalyticsDashboard() {
   }
 
   return (
-    <AdminLayout onNewNotification={load}>
+    <AdminLayout onNewNotification={load} perm="analytics.view">
       <PageHeader eyebrow="Overview" title="Analytics" description="User growth, revenue, commission and sports activity.">
-        <Button variant="outline" onClick={exportCSV} disabled={!data}><Download /> CSV</Button>
-        <Button variant="outline" onClick={exportPDF} disabled={!data}><FileText /> PDF</Button>
+        {can('analytics.export') ? <Button variant="outline" onClick={exportCSV} disabled={!data}><Download /> CSV</Button> : null}
+        {can('analytics.export') ? <Button variant="outline" onClick={exportPDF} disabled={!data}><FileText /> PDF</Button> : null}
       </PageHeader>
 
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -161,7 +163,7 @@ export default function AnalyticsDashboard() {
                   <Card key={s.key} className="p-5">
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-2 text-sm font-bold"><span className={cn('rounded-xl p-2 shadow-md', toneStyles[s.tone].chip)}><s.icon className="h-4 w-4" /></span>{s.label} revenue</span>
-                      <span className="flex items-center gap-0.5 rounded-full bg-muted px-2 py-1 text-xs font-bold"><Percent className="h-3 w-3" />{data.commission_rates[s.key]}</span>
+                      <span title="Effective rate after free activities and bookings" className="flex items-center gap-0.5 rounded-full bg-muted px-2 py-1 text-xs font-bold">{data.commission_rates[s.key]}<Percent className="h-3 w-3" /> effective</span>
                     </div>
                     <p className="mt-4 text-2xl font-extrabold">{naira(data.revenue[s.key])}</p>
                     <p className="text-sm text-muted-foreground">Commission <b className={toneStyles[s.tone].text}>{naira(data.commission[s.key])}</b></p>

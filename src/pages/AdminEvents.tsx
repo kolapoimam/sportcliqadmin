@@ -9,9 +9,9 @@ import { Badge, StatusBadge } from '@/components/ui/badge'
 import { DataTable, type Column } from '@/components/ui/data-table'
 import { Modal } from '@/components/ui/dialog'
 import { Menu } from '@/components/ui/menu'
-import { Alert, useConfirm, useToast } from '@/components/ui/feedback'
+import { Alert, useConfirm, useStepUp, useToast } from '@/components/ui/feedback'
 import { Detail, EmptyState, FilterBar, Loading, PageHeader, Pagination, Segmented, StatTile, usePaged } from '@/components/ui/page'
-import { useAdminSession } from '@/hooks/useAdminSession'
+import { useCan } from '@/hooks/useAdminSession'
 import { adminOperations, type EventRow } from '@/lib/adminOperations'
 import { dateBounds, errorMessage, formatDate, formatDateTime, naira, shortId, type DateFilter } from '@/lib/utils'
 
@@ -19,8 +19,8 @@ const SPORTS = ['Football', 'Basketball', 'Tennis', 'Volleyball', 'Cycling']
 const statusKey = (s: string) => (['passed', 'completed', 'ended'].includes(s.toLowerCase()) ? 'completed' : s.toLowerCase())
 
 export default function AdminEvents() {
-  const session = useAdminSession()
-  const adminRole = session?.role
+  const can = useCan()
+  const stepUp = useStepUp()
   const confirm = useConfirm()
   const toast = useToast()
   const [events, setEvents] = useState<EventRow[]>([])
@@ -121,6 +121,7 @@ export default function AdminEvents() {
   const deleteEvent = async (e: EventRow) => {
     const { ok } = await confirm({ title: `Delete "${e.title}"?`, description: 'This permanently removes the event. Events with participants or payments cannot be deleted, cancel those instead.', confirmText: 'Delete', tone: 'danger', icon: <Trash2 /> })
     if (!ok) return
+    if (!(await stepUp('delete this event'))) return
     try {
       await adminOperations.deleteEvent(e.event_type, e.id)
       setEvents((l) => l.filter((x) => x.id !== e.id))
@@ -135,10 +136,10 @@ export default function AdminEvents() {
   const rowMenu = (e: EventRow) => (
     <Menu items={[
       { label: 'View details', icon: <Eye />, onSelect: () => setViewing(e) },
-      { label: 'Edit event', icon: <Pencil />, onSelect: () => openEdit(e), hidden: !isUpcoming(e) },
+      { label: 'Edit event', icon: <Pencil />, onSelect: () => openEdit(e), hidden: !isUpcoming(e) || !can('events.edit') },
       'separator',
-      { label: 'Cancel event', icon: <Ban />, tone: 'danger', onSelect: () => cancelEvent(e), hidden: !isUpcoming(e) },
-      { label: 'Delete event', icon: <Trash2 />, tone: 'danger', onSelect: () => deleteEvent(e), hidden: !isUpcoming(e) || adminRole !== 'super_admin' },
+      { label: 'Cancel event', icon: <Ban />, tone: 'danger', onSelect: () => cancelEvent(e), hidden: !isUpcoming(e) || !can('events.cancel') },
+      { label: 'Delete event', icon: <Trash2 />, tone: 'danger', onSelect: () => deleteEvent(e), hidden: !isUpcoming(e) || !can('events.delete') },
     ]} />
   )
 
@@ -176,7 +177,7 @@ export default function AdminEvents() {
   ]
 
   return (
-    <AdminLayout>
+    <AdminLayout perm="events.view">
       <PageHeader eyebrow="Manage" title="Events" description="Matches and cycling events across Sport Cliq." />
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -231,9 +232,9 @@ export default function AdminEvents() {
         description={viewing ? `${viewing.event_type === 'match' ? 'Match' : 'Cycling Event'} · ${formatDateTime(viewing.event_date)}` : ''}
         footer={viewing && isUpcoming(viewing) ? (
           <>
-            {adminRole === 'super_admin' ? <Button variant="soft-danger" onClick={() => deleteEvent(viewing)}><Trash2 /> Delete</Button> : null}
-            <Button variant="outline" onClick={() => cancelEvent(viewing)}><Ban /> Cancel event</Button>
-            <Button onClick={() => { openEdit(viewing); setViewing(null) }}><Pencil /> Edit</Button>
+            {can('events.delete') ? <Button variant="soft-danger" onClick={() => deleteEvent(viewing)}><Trash2 /> Delete</Button> : null}
+            {can('events.cancel') ? <Button variant="outline" onClick={() => cancelEvent(viewing)}><Ban /> Cancel event</Button> : null}
+            {can('events.edit') ? <Button onClick={() => { openEdit(viewing); setViewing(null) }}><Pencil /> Edit</Button> : null}
           </>
         ) : null}
       >

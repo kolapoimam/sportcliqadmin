@@ -17,6 +17,10 @@ const AuditLog = lazy(() => import('@/pages/AuditLog'))
 const AdminManagement = lazy(() => import('@/pages/AdminManagement'))
 const AdminProfile = lazy(() => import('@/pages/AdminProfile'))
 const AdminSettings = lazy(() => import('@/pages/AdminSettings'))
+const AdminAmbassadors = lazy(() => import('@/pages/AdminAmbassadors'))
+const MfaPage = lazy(() => import('@/pages/MfaPage'))
+const AuthCallback = lazy(() => import('@/pages/AuthCallback'))
+const AcceptInvite = lazy(() => import('@/pages/AcceptInvite'))
 
 /** Old style /admin/... links still work by dropping the prefix. */
 function LegacyAdminRedirect() {
@@ -34,6 +38,9 @@ export default function App() {
             <Route path="/login" element={<AdminLogin />} />
             <Route path="/setup" element={<AdminSetup />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/mfa" element={<MfaPage />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/invite" element={<AcceptInvite />} />
             <Route path="/admin/*" element={<LegacyAdminRedirect />} />
             <Route path="/admin" element={<LegacyAdminRedirect />} />
             <Route element={<RequireAdmin />}>
@@ -48,6 +55,7 @@ export default function App() {
               <Route path="/admins" element={<AdminManagement />} />
               <Route path="/profile" element={<AdminProfile />} />
               <Route path="/settings" element={<AdminSettings />} />
+              <Route path="/ambassadors" element={<AdminAmbassadors />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

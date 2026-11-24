@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Camera, KeyRound, Shield, ShieldAlert, User } from 'lucide-react'
+import { Camera, KeyRound, Shield, ShieldAlert, ShieldCheck, Smartphone, User } from 'lucide-react'
 import { AdminLayout } from '@/components/AdminLayout'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { Field, Input } from '@/components/ui/input'
+import { Field, Input, PasswordInput } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Avatar } from '@/components/ui/avatar'
 import { Alert, useToast } from '@/components/ui/feedback'
@@ -159,18 +159,27 @@ export default function AdminProfile() {
               <CardHeader icon={<KeyRound />} title="Security settings" description="Change your password." />
               <CardContent>
                 <form onSubmit={changePassword} className="space-y-4">
-                  <Field label="New password" htmlFor="np"><Input id="np" type="password" required value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} /></Field>
-                  <Field label="Confirm password" htmlFor="cp"><Input id="cp" type="password" required value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} /></Field>
+                  <Field label="New password" htmlFor="np"><PasswordInput id="np" required value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} /></Field>
+                  <Field label="Confirm password" htmlFor="cp"><PasswordInput id="cp" required value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} /></Field>
                   {pwMsg ? <Alert variant={pwMsg.kind} icon={pwMsg.kind === 'success' ? <Shield /> : undefined}>{pwMsg.text}</Alert> : null}
                   <Button type="submit" className="w-full sm:w-auto" loading={savingPw}>Update Password</Button>
                 </form>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader icon={<Smartphone />} title="Two factor" description="Required for every sign in, payout approval and delete." />
+              <CardContent>
+                <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
+                  <ShieldCheck className="h-5 w-5 shrink-0" />
+                  <span>Google Authenticator is on, saved as <b>SportCliq Admin</b>. If you lose your phone, ask a super admin to reset it.</span>
+                </div>
               </CardContent>
             </Card>
             <Alert variant="warning" icon={<ShieldAlert />}>
               <p className="font-bold">Security tips</p>
               <ul className="mt-1 list-inside list-disc space-y-0.5">
                 <li>Use a strong password you do not use anywhere else.</li>
-                <li>Turn on two factor authentication when it becomes available.</li>
+                <li>Never share authenticator codes. SportCliq will never ask for them.</li>
                 <li>Report anything suspicious to a super admin straight away.</li>
               </ul>
             </Alert>

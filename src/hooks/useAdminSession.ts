@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getAdminSession, type AdminSession } from '@/lib/session'
+import { getAdminSession, hasPermission, type AdminSession } from '@/lib/session'
 
 export function useAdminSession(): AdminSession | null {
   const [session, setSession] = useState(getAdminSession)
@@ -13,4 +13,10 @@ export function useAdminSession(): AdminSession | null {
     }
   }, [])
   return session
+}
+
+/** const can = useCan(); can('users.edit') */
+export function useCan() {
+  const session = useAdminSession()
+  return (perm: string) => hasPermission(session, perm)
 }

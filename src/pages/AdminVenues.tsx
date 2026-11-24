@@ -9,17 +9,17 @@ import { StatusBadge } from '@/components/ui/badge'
 import { DataTable, type Column } from '@/components/ui/data-table'
 import { Modal } from '@/components/ui/dialog'
 import { Menu } from '@/components/ui/menu'
-import { Alert, useConfirm, useToast } from '@/components/ui/feedback'
+import { Alert, useConfirm, useStepUp, useToast } from '@/components/ui/feedback'
 import { Detail, EmptyState, FilterBar, Loading, PageHeader, Pagination, Segmented, StatTile, usePaged } from '@/components/ui/page'
-import { useAdminSession } from '@/hooks/useAdminSession'
+import { useCan } from '@/hooks/useAdminSession'
 import { adminOperations, type VenueBooking, type VenueRow } from '@/lib/adminOperations'
 import { errorMessage, formatDate, naira, shortId } from '@/lib/utils'
 
 const EMPTY = { name: '', address: '', city: '', state: '', booking_fee: '', price_per_hour: '', phone: '', email: '', map_link: '', opening_hours: '', facilities: '', description: '' }
 
 export default function AdminVenues() {
-  const session = useAdminSession()
-  const adminRole = session?.role
+  const can = useCan()
+  const stepUp = useStepUp()
   const confirm = useConfirm()
   const toast = useToast()
   const [venues, setVenues] = useState<VenueRow[]>([])
@@ -99,6 +99,7 @@ export default function AdminVenues() {
   const doDelete = async (v: VenueRow) => {
     const { ok } = await confirm({ title: `Delete ${v.name}?`, description: 'This permanently removes the venue. Venues with matches or bookings cannot be deleted, reject them instead.', confirmText: 'Delete venue', tone: 'danger', icon: <Trash2 /> })
     if (!ok) return
+    if (!(await stepUp('delete this venue'))) return
     try {
       await adminOperations.deleteVenue(v.id)
       setVenues((list) => list.filter((x) => x.id !== v.id))
@@ -136,12 +137,12 @@ export default function AdminVenues() {
   const rowMenu = (v: VenueRow) => (
     <Menu items={[
       { label: 'View details', icon: <Eye />, onSelect: () => setViewing(v) },
-      { label: 'Edit venue', icon: <Pencil />, onSelect: () => openForm(v) },
+      { label: 'Edit venue', icon: <Pencil />, onSelect: () => openForm(v), hidden: !can('venues.edit') },
       'separator',
-      { label: 'Verify', icon: <CheckCircle2 />, tone: 'success', onSelect: () => setVenueStatus(v, 'verified'), hidden: v.status !== 'pending' },
-      { label: 'Reject', icon: <XCircle />, tone: 'danger', onSelect: () => setVenueStatus(v, 'rejected'), hidden: v.status !== 'pending' },
-      { label: v.status === 'verified' ? 'Set to pending' : 'Verify', icon: <RefreshCw />, onSelect: () => setVenueStatus(v, v.status === 'verified' ? 'pending' : 'verified'), hidden: v.status === 'pending' || v.status === 'rejected' },
-      { label: 'Delete venue', icon: <Trash2 />, tone: 'danger', onSelect: () => doDelete(v), hidden: adminRole !== 'super_admin' },
+      { label: 'Verify', icon: <CheckCircle2 />, tone: 'success', onSelect: () => setVenueStatus(v, 'verified'), hidden: v.status !== 'pending' || !can('venues.approve') },
+      { label: 'Reject', icon: <XCircle />, tone: 'danger', onSelect: () => setVenueStatus(v, 'rejected'), hidden: v.status !== 'pending' || !can('venues.approve') },
+      { label: v.status === 'verified' ? 'Set to pending' : 'Verify', icon: <RefreshCw />, onSelect: () => setVenueStatus(v, v.status === 'verified' ? 'pending' : 'verified'), hidden: v.status === 'pending' || v.status === 'rejected' || !can('venues.approve') },
+      { label: 'Delete venue', icon: <Trash2 />, tone: 'danger', onSelect: () => doDelete(v), hidden: !can('venues.delete') },
     ]} />
   )
 
@@ -168,9 +169,9 @@ export default function AdminVenues() {
   const setF = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm({ ...form, [k]: e.target.value })
 
   return (
-    <AdminLayout>
+    <AdminLayout perm="venues.view">
       <PageHeader eyebrow="Manage" title="Venues" description="Verify venues before they go live on Sport Cliq.">
-        <Button onClick={() => openForm('new')}><Plus /> Add venue</Button>
+        {can('venues.create') ? <Button onClick={() => openForm('new')}><Plus /> Add venue</Button> : null}
       </PageHeader>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -214,9 +215,9 @@ export default function AdminVenues() {
         description={viewing ? `Listed ${formatDate(viewing.created_at)} · ${shortId(viewing.id)}` : ''}
         footer={viewing ? (
           <>
-            {adminRole === 'super_admin' ? <Button variant="soft-danger" onClick={() => doDelete(viewing)}><Trash2 /> Delete</Button> : null}
-            <Button variant="outline" onClick={() => openForm(viewing)}><Pencil /> Edit</Button>
-            {viewing.status === 'pending' ? (
+            {can('venues.delete') ? <Button variant="soft-danger" onClick={() => doDelete(viewing)}><Trash2 /> Delete</Button> : null}
+            {can('venues.edit') ? <Button variant="outline" onClick={() => openForm(viewing)}><Pencil /> Edit</Button> : null}
+            {!can('venues.approve') ? null : viewing.status === 'pending' ? (
               <>
                 <Button variant="soft-danger" onClick={() => setVenueStatus(viewing, 'rejected')}><XCircle /> Reject</Button>
                 <Button onClick={() => setVenueStatus(viewing, 'verified')}><CheckCircle2 /> Verify</Button>

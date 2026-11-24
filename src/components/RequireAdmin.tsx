@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 import { adminOperations } from '@/lib/adminOperations'
 import { getAdminSession } from '@/lib/session'
+import { assurance } from '@/lib/mfa'
 import { Mark } from './Logo'
 
 let verified = false
@@ -19,15 +20,18 @@ export function Splash({ text = 'Checking your session' }: { text?: string }) {
 /** Renders the admin pages only when there is a Supabase session that belongs to an active admin. */
 export function RequireAdmin() {
   const location = useLocation()
-  const [state, setState] = useState<'checking' | 'ok' | 'denied'>(verified && getAdminSession() ? 'ok' : 'checking')
+  const [state, setState] = useState<'checking' | 'ok' | 'denied' | 'mfa'>(verified && getAdminSession() ? 'ok' : 'checking')
 
   useEffect(() => {
     if (state !== 'checking') return
     adminOperations
       .refreshSession()
-      .then((s) => {
-        verified = Boolean(s)
-        setState(s ? 'ok' : 'denied')
+      .then(async (s) => {
+        if (!s) return setState('denied')
+        const level = await assurance()
+        if (level.currentLevel !== 'aal2') return setState('mfa')
+        verified = true
+        setState('ok')
       })
       .catch(() => setState('denied'))
   }, [state])
@@ -51,5 +55,6 @@ export function RequireAdmin() {
   }
   if (state === 'checking') return <Splash />
   if (state === 'denied') return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (state === 'mfa') return <Navigate to="/mfa" replace state={{ from: location.pathname }} />
   return <Outlet />
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import {
-  ArrowRight, BarChart3, Building2, Calendar, CheckCircle2, ClipboardList, DollarSign, ShieldCheck, Sparkles, TrendingUp, Users, Wallet,
+  ArrowRight, BarChart3, Building2, Calendar, CheckCircle2, ClipboardList, DollarSign, Handshake, Percent, ShieldCheck, Sparkles, TrendingUp, Users, Wallet,
 } from 'lucide-react'
 import { AdminLayout } from '@/components/AdminLayout'
 import { ChartCanvas, chartColors } from '@/components/Chart'
@@ -10,8 +10,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { EmptyState, StatTile } from '@/components/ui/page'
 import { Avatar } from '@/components/ui/avatar'
-import { useConfirm, useToast } from '@/components/ui/feedback'
-import { useAdminSession } from '@/hooks/useAdminSession'
+import { useConfirm, useStepUp, useToast } from '@/components/ui/feedback'
+import { useAdminSession, useCan } from '@/hooks/useAdminSession'
 import { adminOperations, type CashoutRow, type Dashboard, type Metrics } from '@/lib/adminOperations'
 import { cn, errorMessage, naira } from '@/lib/utils'
 
@@ -27,6 +27,8 @@ export default function AdminDashboard() {
   const session = useAdminSession()
   const navigate = useNavigate()
   const confirm = useConfirm()
+  const stepUp = useStepUp()
+  const can = useCan()
   const toast = useToast()
   const [metrics, setMetrics] = useState<Metrics>(ZERO)
   const [dash, setDash] = useState<Dashboard | null>(null)
@@ -55,10 +57,11 @@ export default function AdminDashboard() {
   }, [load])
 
   const approve = async (c: CashoutRow) => {
-    const { ok } = await confirm({ title: `Approve ${naira(c.amount)} cashout?`, description: `${c.organizer} for ${c.event_title ?? c.type}. Make sure the transfer is done before approving.`, confirmText: 'Approve', tone: 'success' })
+    const { ok, reason } = await confirm({ title: `Approve ${naira(c.amount)} cashout?`, description: `Payouts are manual. Send ${naira(c.amount)} to ${c.account_name || c.organizer}, ${c.bank_name} ${c.account_number} from your bank first, then approve.`, confirmText: 'Continue', tone: 'success', reasonLabel: 'Bank transfer reference', reasonOptional: true })
     if (!ok) return
+    if (!(await stepUp('approve this payout'))) return
     try {
-      await adminOperations.updateCashoutStatus(c.source, c.id, 'approved')
+      await adminOperations.updateCashoutStatus(c.source, c.id, 'approved', undefined, reason)
       toast.success('Cashout approved')
       load()
     } catch (e) {
@@ -67,21 +70,21 @@ export default function AdminDashboard() {
   }
 
   const name = session?.first_name || session?.email || 'Admin'
-  const isSuper = session?.role === 'super_admin'
 
   const actions = [
-    { label: 'View Users', path: '/users', icon: Users, color: 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/30' },
-    { label: 'View Events', path: '/events', icon: Calendar, color: 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/30' },
-    { label: 'Review Cashouts', path: '/cashouts', icon: DollarSign, color: 'bg-green-600 hover:bg-green-700 shadow-green-600/30' },
-    { label: 'View Analytics', path: '/analytics', icon: BarChart3, color: 'bg-purple-500 hover:bg-purple-600 shadow-purple-500/30' },
-    { label: 'Manage Venues', path: '/venues', icon: Building2, color: 'bg-teal-500 hover:bg-teal-600 shadow-teal-500/30' },
-    ...(isSuper ? [{ label: 'Manage Admins', path: '/admins', icon: ShieldCheck, color: 'bg-red-500 hover:bg-red-600 shadow-red-500/30' }] : []),
-  ]
+    { label: 'View Users', path: '/users', icon: Users, color: 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/30', perm: 'users.view' },
+    { label: 'View Events', path: '/events', icon: Calendar, color: 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/30', perm: 'events.view' },
+    { label: 'Review Cashouts', path: '/cashouts', icon: DollarSign, color: 'bg-green-600 hover:bg-green-700 shadow-green-600/30', perm: 'cashouts.view' },
+    { label: 'View Analytics', path: '/analytics', icon: BarChart3, color: 'bg-purple-500 hover:bg-purple-600 shadow-purple-500/30', perm: 'analytics.view' },
+    { label: 'Manage Venues', path: '/venues', icon: Building2, color: 'bg-teal-500 hover:bg-teal-600 shadow-teal-500/30', perm: 'venues.view' },
+    { label: 'Ambassadors', path: '/ambassadors', icon: Handshake, color: 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/30', perm: 'ambassadors.view' },
+    { label: 'Manage Admins', path: '/admins', icon: ShieldCheck, color: 'bg-red-500 hover:bg-red-600 shadow-red-500/30', perm: 'admins.view' },
+  ].filter((a) => can(a.perm))
 
   const days = dash?.revenue_daily ?? []
 
   return (
-    <AdminLayout onNewNotification={load}>
+    <AdminLayout onNewNotification={load} perm="dashboard.view">
       {/* Hero */}
       <div className="relative mb-6 overflow-hidden rounded-[32px] bg-[#03190f] p-6 text-white shadow-lift sm:p-8">
         <div className="absolute inset-0 bg-[radial-gradient(600px_300px_at_100%_0%,rgba(15,184,99,0.45),transparent_60%),radial-gradient(400px_300px_at_0%_100%,rgba(5,150,79,0.35),transparent_60%)]" />
@@ -132,7 +135,7 @@ export default function AdminDashboard() {
         <StatTile loading={loading} tone="rose" label="Pending Cashouts" value={Number(metrics.pending_cashouts).toLocaleString()} icon={<Wallet />} hint="Waiting for review" onClick={() => navigate('/cashouts')} />
         <StatTile loading={loading} tone="green" label="Total Revenue" value={naira(metrics.total_revenue)} icon={<TrendingUp />} hint="Total platform revenue" onClick={() => navigate('/analytics')} />
         <StatTile loading={loading} tone="violet" label="Active Venues" value={Number(metrics.active_venues).toLocaleString()} icon={<Building2 />} hint={dash ? `${dash.pending_venues} waiting for verification` : 'Verified venues'} onClick={() => navigate('/venues')} />
-        <StatTile loading={loading} tone="teal" label="New Users, 7 days" value={(dash?.new_users_7d ?? 0).toLocaleString()} icon={<Sparkles />} hint="Sign ups this week" onClick={() => navigate('/users')} />
+        <StatTile loading={loading} tone="teal" label="SportCliq Commission" value={naira(Math.round(metrics.total_commission ?? 0))} icon={<Percent />} hint={`${metrics.active_ambassadors ?? 0} active ambassadors`} onClick={() => navigate('/analytics')} />
       </div>
 
       {/* Quick actions */}
@@ -168,7 +171,7 @@ export default function AdminDashboard() {
                       <p className="truncate text-xs text-muted-foreground">{c.type} · {c.event_title ?? 'N/A'}</p>
                     </div>
                     <p className="text-sm font-extrabold">{naira(c.amount)}</p>
-                    <Button size="sm" onClick={() => approve(c)}>Approve</Button>
+                    {can('cashouts.approve') ? <Button size="sm" onClick={() => approve(c)}>Approve</Button> : null}
                   </li>
                 ))}
               </ul>

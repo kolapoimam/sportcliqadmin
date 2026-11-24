@@ -21,7 +21,10 @@ React, TypeScript, Vite, Tailwind and Supabase. Font is Plus Jakarta Sans and co
 | `/audit` | Audit log with filters and CSV export | Admins (export is super admin only) |
 | `/admins` | Manage admin accounts | Super admins |
 | `/profile` | Avatar, name and password | Admins |
-| `/settings` | Commission rates, dark mode, help | Admins (rates are super admin only) |
+| `/settings` | Fee rules, roles and permissions, appearance | settings.view |
+| `/ambassadors` | Ambassadors, assignments, earnings, payouts | ambassadors.view |
+| `/mfa` | Two factor setup and sign in | Everyone signing in |
+| `/invite` | Accept an admin invite | Invitees |
 
 Old `/admin/...` links redirect to the new paths.
 
@@ -38,34 +41,50 @@ The browser never holds the service role key. Admin rights are checked in the da
 
 ### 1. Database
 
-In the Supabase SQL editor run these files **in order, one at a time**. All of them are additive and safe to run again.
+Open `supabase/RUN_THIS_admin_portal_setup.sql`, paste all of it into the Supabase SQL editor and run it. It contains every portal update in order, is additive only, and is safe to run again on top of an earlier run.
 
-1. `supabase/migrations/20261113000001_admin_enum_labels.sql`
-2. `supabase/migrations/20261113000002_admin_portal.sql`
-3. `supabase/migrations/20261124000001_admin_portal_v2.sql`
-
-Then set your setup secret, using your own phrase of 12 characters or more:
+Then set your setup secret, once, with your own phrase of 12 characters or more:
 
 ```sql
 select admin_set_setup_secret('your-long-secret-phrase');
 ```
 
-No edge functions are needed. First admin setup and creating admins run in the database.
+### 2. Supabase Auth
 
-### 2. Supabase Auth settings
+* **Multi factor.** Authentication > Multi-Factor: TOTP (authenticator app) must be enabled. It is on by default.
+* **Google.** Authentication > Sign In / Providers > Google: turn it on with a Google Cloud OAuth client. In Google Cloud the authorised redirect URI is `https://qxafigbrfpxdklwoqkxj.supabase.co/auth/v1/callback`.
+* **Email sign ups** must be allowed (Providers > Email). The portal signs new admins up, then the database confirms them.
+* **Redirect URLs** (URL Configuration): add `https://admin.sportcliq.com/**`.
 
-* Authentication > URL Configuration: add `https://admin.sportcliq.com/reset-password` and `https://admin.sportcliq.com/login` to Redirect URLs.
-* Authentication > Providers > Email: sign ups must be allowed. The portal signs a new admin up, then the database confirms them.
+### 3. Push and email function
 
-### 3. Vercel
+The `admin-dispatch` edge function sends notifications with OneSignal and Resend, and sends admin invite emails. It reuses the secrets the SportCliq app already has in the same Supabase project (`ONESIGNAL_APP_ID`, `ONESIGNAL_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `FRONTEND_URL`).
 
-Environment variables from `.env.example`: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SITE_URL` (`https://admin.sportcliq.com`) and `VITE_MAIN_APP_URL` (`https://sportcliq.com`). Redeploy after changing them.
+1. In this GitHub repo add the secret `SUPABASE_ACCESS_TOKEN` (Settings > Secrets and variables > Actions). Use the same token as the playarena repo.
+2. Open Actions > "Deploy admin Supabase functions" > Run workflow. It also runs by itself when a function changes on main.
 
-### 4. First admin
+### 4. Vercel
 
-Open `https://admin.sportcliq.com/setup`, fill in your details and the setup secret. You are signed in straight away. Setup stays open until there is an active admin linked to a login, so older rows in the `admins` table no longer block it. If you use an email that already has a Sport Cliq login, its password becomes the one you enter.
+Environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SITE_URL` (`https://admin.sportcliq.com`), `VITE_MAIN_APP_URL` (`https://sportcliq.com`).
 
-After 10 wrong secrets setup locks. Run `admin_set_setup_secret` again to unlock it.
+### 5. First admin
+
+Open `https://admin.sportcliq.com/setup`, enter your details and the setup secret, then set up Google Authenticator. Invite everyone else from the Admins page.
+
+## Security
+
+* Two factor (Google Authenticator, saved as **SportCliq Admin**) is required for every admin at every sign in. The database refuses every admin action from a session that has not passed two factor.
+* Payout approvals and every delete ask for a fresh code. The database checks the code was entered in the last 5 minutes.
+* Roles and permissions live in `admin_roles`. Six built in roles, plus any custom roles made in Settings. Every admin function checks its permission in the database.
+* The audit trail records sign ins, failed codes, page views, every admin action and every field an admin changes, with IP address and device.
+
+## Fees
+
+Organisers and hosts pay nothing on their first 2 paid activities (matches and rides counted together), then 5%. Venues get their first paid booking free, then 10%. Ambassadors earn 10% of SportCliq's fee from their assigned venues and events. All of this is editable in Settings.
+
+## Payouts are manual
+
+The portal is not connected to a transfer service and never moves money. Cashouts and ambassador payouts are sent from the SportCliq bank account by hand, then approved in the portal with the transfer reference.
 
 ## Local development
 
@@ -75,9 +94,3 @@ npm install
 npm run dev
 ```
 
-## Things to know
-
-* **Delivery of push and email.** The Notifications page records each notification in the `notifications` table with its recipient count. Sending the actual push or email needs your existing provider to pick those rows up.
-* **Commission rates** live in `admin_settings` and are edited by super admins on the Settings page. Commission is revenue for each stream (paid match slots and tickets, paid cycling registrations, paid venue bookings) times that stream's rate.
-* **Sport** comes from the new `matches.sport` column. Empty means Football until the main app starts filling it.
-* **Admin alerts** for the bell come from triggers on new users, matches, cycling events, bookings, venues and cashouts. They are wrapped so they can never block the main app.

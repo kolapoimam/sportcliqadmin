@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Search, X } from 'lucide-react'
+import { Eye, EyeOff, Search, X } from 'lucide-react'
 import * as SwitchPrimitive from '@radix-ui/react-switch'
 import { cn } from '@/lib/utils'
 
@@ -64,5 +64,48 @@ export function Switch({ checked, onCheckedChange, label, disabled }: { checked:
     >
       <SwitchPrimitive.Thumb className="block h-5 w-5 translate-x-0.5 rounded-full bg-white shadow transition-transform data-[state=checked]:translate-x-[22px]" />
     </SwitchPrimitive.Root>
+  )
+}
+
+/** Password field with a show or hide button. */
+export const PasswordInput = React.forwardRef<HTMLInputElement, Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> & { icon?: React.ReactNode }>(({ className, icon, ...props }, ref) => {
+  const [show, setShow] = React.useState(false)
+  return (
+    <div className="relative">
+      {icon ? <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground [&_svg]:size-4">{icon}</span> : null}
+      <input ref={ref} type={show ? 'text' : 'password'} className={cn(base, 'h-11 pr-11', icon ? 'pl-10' : '', className)} {...props} />
+      <button
+        type="button"
+        onClick={() => setShow((s) => !s)}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        aria-pressed={show}
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 cursor-pointer rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  )
+})
+PasswordInput.displayName = 'PasswordInput'
+
+/** Six digit authenticator code input. Calls onComplete when six digits are in. */
+export function CodeInput({ value, onChange, onComplete, autoFocus = true, disabled }: { value: string; onChange: (v: string) => void; onComplete?: (v: string) => void; autoFocus?: boolean; disabled?: boolean }) {
+  return (
+    <input
+      aria-label="6 digit code from your authenticator app"
+      inputMode="numeric"
+      autoComplete="one-time-code"
+      autoFocus={autoFocus}
+      disabled={disabled}
+      maxLength={6}
+      placeholder="000000"
+      value={value}
+      onChange={(e) => {
+        const v = e.target.value.replace(/\D/g, '').slice(0, 6)
+        onChange(v)
+        if (v.length === 6) onComplete?.(v)
+      }}
+      className={cn(base, 'h-16 text-center font-mono text-3xl font-bold tracking-[0.5em] placeholder:tracking-[0.5em] placeholder:text-gray-300 dark:placeholder:text-gray-700')}
+    />
   )
 }

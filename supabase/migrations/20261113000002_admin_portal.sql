@@ -188,7 +188,9 @@ end $$;
 -- 5. Revenue source used by dashboard and analytics
 -------------------------------------------------------------------------------
 
-create or replace function public.admin_revenue_items(p_start timestamptz default null, p_end timestamptz default null)
+-- Dropped first so this file can be rerun after update 3, which widens this function
+drop function if exists public.admin_revenue_items(timestamptz, timestamptz);
+create function public.admin_revenue_items(p_start timestamptz default null, p_end timestamptz default null)
 returns table(kind text, amount numeric, at timestamptz, venue_id uuid)
 language sql stable security definer set search_path = public as $$
   select * from (

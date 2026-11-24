@@ -12,6 +12,7 @@ import { DataTable, type Column } from '@/components/ui/data-table'
 import { Modal } from '@/components/ui/dialog'
 import { Menu } from '@/components/ui/menu'
 import { Alert, useConfirm, useToast } from '@/components/ui/feedback'
+import { useCan } from '@/hooks/useAdminSession'
 import { Detail, EmptyState, FilterBar, Loading, PageHeader, Pagination, Segmented } from '@/components/ui/page'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { adminOperations, type UserRow } from '@/lib/adminOperations'
@@ -27,8 +28,9 @@ const CATEGORIES = [
   { value: 'venue_owner', label: 'Venue Owners' },
 ]
 
-function StatusSelect({ user, onChange }: { user: UserRow; onChange: (u: UserRow, s: string) => void }) {
+function StatusSelect({ user, onChange, disabled }: { user: UserRow; onChange: (u: UserRow, s: string) => void; disabled?: boolean }) {
   if (!user.event_status) return <span className="text-muted-foreground">N/A</span>
+  if (disabled) return <StatusBadge status={user.event_status} />
   return (
     <div onClick={(e) => e.stopPropagation()}>
       <Select ariaLabel={`Event status for ${user.name}`} value={user.event_status} onValueChange={(v) => onChange(user, v)} options={STATUSES.map((s) => ({ value: s, label: s }))} className="h-9 min-w-[132px] rounded-lg" />
@@ -38,6 +40,7 @@ function StatusSelect({ user, onChange }: { user: UserRow; onChange: (u: UserRow
 
 export default function AdminUserManagement() {
   const confirm = useConfirm()
+  const can = useCan()
   const toast = useToast()
   const [users, setUsers] = useState<UserRow[]>([])
   const [total, setTotal] = useState(0)
@@ -192,13 +195,13 @@ export default function AdminUserManagement() {
     <Menu
       items={[
         { label: 'View details', icon: <Eye />, onSelect: () => setSelected(u) },
-        { label: 'Edit profile', icon: <Pencil />, onSelect: () => openEdit(u) },
-        { label: 'Send notification', icon: <Send />, onSelect: () => setMessaging(u) },
-        { label: 'Reset password', icon: <KeyRound />, onSelect: () => resetPassword(u), disabled: !u.email },
+        { label: 'Edit profile', icon: <Pencil />, onSelect: () => openEdit(u), hidden: !can('users.edit') },
+        { label: 'Send notification', icon: <Send />, onSelect: () => setMessaging(u), hidden: !can('users.message') },
+        { label: 'Reset password', icon: <KeyRound />, onSelect: () => resetPassword(u), disabled: !u.email, hidden: !can('users.edit') },
         'separator',
         (u.account_status || 'active') === 'active'
-          ? { label: 'Suspend user', icon: <Ban />, tone: 'danger', onSelect: () => suspendToggle(u) }
-          : { label: 'Activate user', icon: <UserCheck />, tone: 'success', onSelect: () => suspendToggle(u) },
+          ? { label: 'Suspend user', icon: <Ban />, tone: 'danger', onSelect: () => suspendToggle(u), hidden: !can('users.suspend') }
+          : { label: 'Activate user', icon: <UserCheck />, tone: 'success', onSelect: () => suspendToggle(u), hidden: !can('users.suspend') },
       ]}
     />
   )
@@ -226,7 +229,7 @@ export default function AdminUserManagement() {
     { key: 'venue', header: 'Venue/Landmark', cell: (u) => u.location || 'N/A', hideOnMobile: true, wideOnly: true },
     { key: 'value', header: 'Value', sort: (u) => u.value, cell: (u) => (u.event_title ? naira(u.value) : 'N/A'), hideOnMobile: true, wideOnly: true },
     { key: 'slots', header: 'Slots', cell: (u) => u.slots ?? 'N/A', hideOnMobile: true },
-    { key: 'status', header: 'Status', cell: (u) => <StatusSelect user={u} onChange={changeStatus} /> },
+    { key: 'status', header: 'Status', cell: (u) => <StatusSelect user={u} onChange={changeStatus} disabled={!can('users.edit')} /> },
     { key: 'earned', header: 'Earned', sort: (u) => u.total_earned, cell: (u) => <span className="font-semibold">{naira(u.total_earned)}</span> },
     { key: 'spent', header: 'Spent', sort: (u) => u.total_spent, cell: (u) => naira(u.total_spent), hideOnMobile: true, wideOnly: true },
     { key: 'code', header: 'Super Code', cell: (u) => (u.super_code ? <code className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-bold">{u.super_code}</code> : 'N/A'), hideOnMobile: true, wideOnly: true },
@@ -235,9 +238,9 @@ export default function AdminUserManagement() {
   ]
 
   return (
-    <AdminLayout>
+    <AdminLayout perm="users.view">
       <PageHeader eyebrow="Manage" title="Users" description="Search players, organizers, hosts and venue owners.">
-        <Button variant="outline" onClick={exportCsv} disabled={!users.length}><Download /> Export</Button>
+        {can('users.export') ? <Button variant="outline" onClick={exportCsv} disabled={!users.length}><Download /> Export</Button> : null}
       </PageHeader>
 
       <Segmented className="mb-4" value={category} onChange={setCategory} options={CATEGORIES.map((c) => ({ ...c, count: c.value === category && !loading ? total : undefined }))} />
@@ -285,9 +288,9 @@ export default function AdminUserManagement() {
         description="Account details, activity and admin actions."
         footer={selected ? (
           <>
-            <Button variant="outline" onClick={() => setMessaging(selected)}><Send /> Message</Button>
-            <Button variant="outline" onClick={() => openEdit(selected)}><Pencil /> Edit</Button>
-            {(selected.account_status || 'active') === 'active'
+            {can('users.message') ? <Button variant="outline" onClick={() => setMessaging(selected)}><Send /> Message</Button> : null}
+            {can('users.edit') ? <Button variant="outline" onClick={() => openEdit(selected)}><Pencil /> Edit</Button> : null}
+            {!can('users.suspend') ? null : (selected.account_status || 'active') === 'active'
               ? <Button variant="soft-danger" onClick={() => suspendToggle(selected)}><Ban /> Suspend</Button>
               : <Button variant="soft" onClick={() => suspendToggle(selected)}><UserCheck /> Activate</Button>}
           </>
@@ -332,10 +335,10 @@ export default function AdminUserManagement() {
                     <p className="font-bold">{selected.event_title}</p>
                     <p className="text-xs text-muted-foreground">{selected.location} · {selected.slots} slot(s) · {naira(selected.value)}</p>
                   </div>
-                  <StatusSelect user={selected} onChange={changeStatus} />
+                  <StatusSelect user={selected} onChange={changeStatus} disabled={!can('users.edit')} />
                 </div>
               ) : null}
-              <Button variant="outline" className="mt-4" onClick={() => resetPassword(selected)} disabled={!selected.email}><KeyRound /> Send password reset</Button>
+              {can('users.edit') ? <Button variant="outline" className="mt-4" onClick={() => resetPassword(selected)} disabled={!selected.email}><KeyRound /> Send password reset</Button> : null}
             </TabsContent>
           </Tabs>
         ) : null}

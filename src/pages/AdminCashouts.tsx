@@ -10,13 +10,16 @@ import { Badge, StatusBadge } from '@/components/ui/badge'
 import { Avatar } from '@/components/ui/avatar'
 import { DataTable, type Column } from '@/components/ui/data-table'
 import { Modal } from '@/components/ui/dialog'
-import { Alert, useConfirm, useToast } from '@/components/ui/feedback'
+import { Alert, useConfirm, useStepUp, useToast } from '@/components/ui/feedback'
+import { useCan } from '@/hooks/useAdminSession'
 import { Detail, EmptyState, FilterBar, Loading, PageHeader, Pagination, Segmented, StatTile, usePaged } from '@/components/ui/page'
 import { adminOperations, type CashoutRow } from '@/lib/adminOperations'
 import { dateBounds, downloadBlob, errorMessage, formatDateTime, naira, shortId, type DateFilter } from '@/lib/utils'
 
 export default function AdminCashouts() {
   const confirm = useConfirm()
+  const stepUp = useStepUp()
+  const can = useCan()
   const toast = useToast()
   const [cashouts, setCashouts] = useState<CashoutRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,15 +66,16 @@ export default function AdminCashouts() {
   }
 
   const approve = async (c: CashoutRow) => {
-    const { ok } = await confirm({
+    const { ok, reason } = await confirm({
       title: `Approve ${naira(c.amount)}?`,
-      description: <>Pay <b>{c.account_name || c.organizer}</b>, {c.bank_name} {c.account_number}. Approve only after the transfer has gone out.</>,
-      confirmText: 'Approve cashout', tone: 'success', icon: <CheckCircle2 />,
+      description: <>Payouts are manual. Send <b>{naira(c.amount)}</b> to <b>{c.account_name || c.organizer}</b>, {c.bank_name} {c.account_number} from the SportCliq bank account first. Then add the transfer reference here.</>,
+      confirmText: 'Continue', tone: 'success', icon: <CheckCircle2 />, reasonLabel: 'Bank transfer reference', reasonOptional: true,
     })
     if (!ok) return
+    if (!(await stepUp('approve this payout'))) return
     setBusyId(c.id)
     try {
-      await adminOperations.updateCashoutStatus(c.source, c.id, 'approved')
+      await adminOperations.updateCashoutStatus(c.source, c.id, 'approved', undefined, reason)
       patch(c, { status: 'approved', rejection_reason: null })
       toast.success('Cashout approved', `${naira(c.amount)} to ${c.organizer}`)
     } catch (e) {
@@ -116,7 +120,7 @@ export default function AdminCashouts() {
   const actions = (c: CashoutRow) => (
     <>
       <Button variant="ghost" size="icon-sm" aria-label="View cashout" onClick={() => setViewing(c)}><Eye /></Button>
-      {c.status.toLowerCase() === 'pending' ? (
+      {c.status.toLowerCase() === 'pending' && can('cashouts.approve') ? (
         <>
           <Button size="sm" onClick={() => approve(c)} disabled={busyId === c.id}><Check /> Approve</Button>
           <Button size="sm" variant="soft-danger" onClick={() => reject(c)} disabled={busyId === c.id}><X /> Reject</Button>
@@ -145,10 +149,14 @@ export default function AdminCashouts() {
   ]
 
   return (
-    <AdminLayout onNewNotification={load}>
+    <AdminLayout onNewNotification={load} perm="cashouts.view">
       <PageHeader eyebrow="Money" title="Cashouts" description="Review payout requests from organizers, hosts and venue owners.">
-        <Button variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download /> Export CSV</Button>
+        {can('cashouts.export') ? <Button variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download /> Export CSV</Button> : null}
       </PageHeader>
+
+      <Alert variant="info" className="mb-4" icon={<Landmark />}>
+        <b>Payouts are manual for now.</b> The portal is not connected to a transfer service, so it never moves money. Send each payout from the SportCliq bank account, then approve it here with the transfer reference. Approving asks for your authenticator code.
+      </Alert>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile tone="amber" label="Pending" value={by('pending').length} hint={naira(sum(by('pending')))} icon={<Clock />} onClick={() => setStatus('pending')} active={status === 'pending'} />
@@ -198,7 +206,7 @@ export default function AdminCashouts() {
         icon={<Wallet />}
         title={viewing ? `${viewing.type} cashout · ${naira(viewing.amount)}` : ''}
         description={viewing ? `Requested ${formatDateTime(viewing.created_at)}` : ''}
-        footer={viewing && viewing.status.toLowerCase() === 'pending' ? (
+        footer={viewing && viewing.status.toLowerCase() === 'pending' && can('cashouts.approve') ? (
           <>
             <Button variant="soft-danger" onClick={() => reject(viewing)} disabled={busyId === viewing.id}><X /> Reject</Button>
             <Button onClick={() => approve(viewing)} disabled={busyId === viewing.id}><Check /> Approve</Button>

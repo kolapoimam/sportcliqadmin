@@ -35,7 +35,7 @@ export function StatusBadge({ status, className }: { status: string | null | und
   const s = (status || 'unknown').toLowerCase().replace(/[^a-z]/g, '')
   const map: Record<string, BadgeVariant> = {
     active: 'success', verified: 'success', approved: 'success', live: 'success', sent: 'success', checkedin: 'success', paid: 'success', success: 'success',
-    pending: 'warning', upcoming: 'info', registered: 'info', processing: 'info',
+    pending: 'warning', notdelivered: 'warning', sending: 'info', partial: 'warning', invited: 'info', paused: 'warning', exited: 'secondary', expired: 'secondary', revoked: 'secondary', accepted: 'success', upcoming: 'info', registered: 'info', processing: 'info',
     rejected: 'danger', cancelled: 'danger', canceled: 'danger', inactive: 'danger', suspended: 'danger', failed: 'danger', absent: 'danger', noshow: 'danger',
     passed: 'secondary', completed: 'secondary',
   }

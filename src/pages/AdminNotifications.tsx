@@ -9,9 +9,9 @@ import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { DataTable, type Column } from '@/components/ui/data-table'
 import { Modal } from '@/components/ui/dialog'
-import { Alert, useConfirm, useToast } from '@/components/ui/feedback'
+import { Alert, useConfirm, useStepUp, useToast } from '@/components/ui/feedback'
 import { EmptyState, FilterBar, Loading, PageHeader, Pagination, StatTile, usePaged } from '@/components/ui/page'
-import { useAdminSession } from '@/hooks/useAdminSession'
+import { useCan } from '@/hooks/useAdminSession'
 import { adminOperations, type AdminNotification } from '@/lib/adminOperations'
 import { cn, dateBounds, errorMessage, shortId, type DateFilter } from '@/lib/utils'
 
@@ -44,7 +44,8 @@ function typeBadge(t: string) {
 }
 
 export default function AdminNotifications() {
-  const session = useAdminSession()
+  const can = useCan()
+  const stepUp = useStepUp()
   const confirm = useConfirm()
   const toast = useToast()
   const [items, setItems] = useState<AdminNotification[]>([])
@@ -99,7 +100,7 @@ export default function AdminNotifications() {
       const n = await adminOperations.sendNotification({ type: form.type, target: form.target, targetId: needsId ? form.targetId.trim() : null, title: form.title.trim(), message: form.message.trim() })
       setItems((list) => [n, ...list])
       setOpen(false)
-      toast.success('Notification sent', `${(n.recipients ?? 0).toLocaleString()} recipients`)
+      await deliver(n)
     } catch (e) {
       toast.error('Could not send', errorMessage(e))
     } finally {
@@ -107,9 +108,24 @@ export default function AdminNotifications() {
     }
   }
 
+  /** Hands the notification to OneSignal and Resend through the admin-dispatch function. */
+  const deliver = async (n: AdminNotification) => {
+    setItems((list) => list.map((x) => (x.id === n.id ? { ...x, status: 'sending' } : x)))
+    try {
+      const r = await adminOperations.dispatchNotification(n.id)
+      setItems((list) => list.map((x) => (x.id === n.id ? { ...x, status: r.status, push_sent: r.push_sent, email_sent: r.email_sent, delivery_error: r.error ?? null } : x)))
+      if (r.ok) toast.success('Notification delivered', `${r.push_sent.toLocaleString()} push, ${r.email_sent.toLocaleString()} email`)
+      else toast.error('Delivery had problems', r.error)
+    } catch (e) {
+      setItems((list) => list.map((x) => (x.id === n.id ? { ...x, status: 'failed', delivery_error: errorMessage(e) } : x)))
+      toast.error('Saved but not delivered', errorMessage(e))
+    }
+  }
+
   const remove = async (n: AdminNotification) => {
     const { ok } = await confirm({ title: 'Delete this notification?', description: 'It is removed from the history for everyone.', confirmText: 'Delete', tone: 'danger', icon: <Trash2 /> })
     if (!ok) return
+    if (!(await stepUp('delete this notification'))) return
     try {
       await adminOperations.deleteNotification(n.id)
       setItems((l) => l.filter((x) => x.id !== n.id))
@@ -147,9 +163,17 @@ export default function AdminNotifications() {
       },
     },
     { key: 'type', header: 'Type', sort: (n) => n.type, cell: (n) => typeBadge(n.type) },
-    { key: 'recipients', header: 'Recipients', sort: (n) => n.recipients, cell: (n) => <span className="font-semibold">{(n.recipients ?? 0).toLocaleString()}</span> },
+    {
+      key: 'recipients', header: 'Delivered', sort: (n) => n.recipients,
+      cell: (n) => (
+        <div className="text-xs">
+          <p className="text-sm font-semibold">{(n.recipients ?? 0).toLocaleString()} <span className="font-normal text-muted-foreground">targeted</span></p>
+          {n.push_sent != null || n.email_sent != null ? <p className="text-muted-foreground">{n.push_sent ?? 0} push · {n.email_sent ?? 0} email</p> : null}
+        </div>
+      ),
+    },
     { key: 'sent', header: 'Sent At', sort: (n) => n.sent_at, cell: (n) => (n.sent_at ? format(new Date(n.sent_at), 'dd MMM yyyy, HH:mm') : 'N/A'), hideOnMobile: true },
-    { key: 'status', header: 'Status', cell: (n) => <StatusBadge status={n.status || 'sent'} /> },
+    { key: 'status', header: 'Status', cell: (n) => <span title={n.delivery_error ?? undefined}><StatusBadge status={n.push_sent == null && n.email_sent == null && (n.status || 'sent') === 'sent' ? 'not delivered' : n.status || 'sent'} /></span> },
   ]
 
   const counts = {
@@ -159,10 +183,10 @@ export default function AdminNotifications() {
   }
 
   return (
-    <AdminLayout onNewNotification={load}>
+    <AdminLayout onNewNotification={load} perm="notifications.view">
       <PageHeader eyebrow="System" title="Notifications" description="Send updates to users and see what has gone out.">
         <Button variant="outline" onClick={markAll}><CheckCheck /> Mark alerts read</Button>
-        <Button onClick={() => openWith()}><Send /> Send Notification</Button>
+        {can('notifications.send') ? <Button onClick={() => openWith()}><Send /> Send Notification</Button> : null}
       </PageHeader>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -174,7 +198,7 @@ export default function AdminNotifications() {
 
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
         {TEMPLATES.map((t) => (
-          <button key={t.name} type="button" onClick={() => openWith(t)} className="group flex cursor-pointer items-start gap-3 rounded-3xl bg-background p-4 text-left shadow-soft ring-1 ring-black/[0.04] transition-all hover:-translate-y-0.5 hover:shadow-lift dark:ring-white/[0.06]">
+          <button key={t.name} type="button" disabled={!can('notifications.send')} onClick={() => openWith(t)} className="group flex cursor-pointer items-start gap-3 rounded-3xl bg-background p-4 text-left shadow-soft ring-1 ring-black/[0.04] transition-all hover:-translate-y-0.5 hover:shadow-lift dark:ring-white/[0.06]">
             <span className={cn('rounded-2xl p-2.5 text-white shadow-md', t.tone)}><t.icon className="h-5 w-5" /></span>
             <span className="min-w-0">
               <span className="block font-bold">{t.name}</span>
@@ -207,7 +231,14 @@ export default function AdminNotifications() {
         <CardContent>
           {loading ? <Loading /> : (
             <DataTable columns={columns} rows={pageRows} rowKey={(n) => n.id}
-              actions={session?.role === 'super_admin' ? (n) => <Button variant="ghost" size="icon-sm" aria-label="Delete notification" onClick={() => remove(n)}><Trash2 className="text-red-600" /></Button> : undefined}
+              actions={(n) => (
+                <>
+                  {can('notifications.send') && (['failed', 'partial'].includes((n.status || '').toLowerCase()) || (n.push_sent == null && n.email_sent == null && (n.status || '').toLowerCase() !== 'sending')) ? (
+                    <Button variant="soft" size="sm" onClick={() => deliver(n)}><Send /> {['failed', 'partial'].includes((n.status || '').toLowerCase()) ? 'Retry' : 'Deliver'}</Button>
+                  ) : null}
+                  {can('notifications.delete') ? <Button variant="ghost" size="icon-sm" aria-label="Delete notification" onClick={() => remove(n)}><Trash2 className="text-red-600" /></Button> : null}
+                </>
+              )}
               empty={<EmptyState icon={<Megaphone />} title="No notifications sent yet" action={<Button onClick={() => openWith()}><Send /> Send one</Button>} />} />
           )}
           <Pagination {...pagination} />

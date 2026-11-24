@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { KeyRound, MailCheck } from 'lucide-react'
 import { AuthShell } from '@/components/AuthShell'
 import { Button } from '@/components/ui/button'
-import { Field, Input } from '@/components/ui/input'
+import { Field, Input, PasswordInput } from '@/components/ui/input'
 import { Alert } from '@/components/ui/feedback'
 import { Card } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
@@ -68,8 +68,8 @@ export default function ResetPassword() {
         <p className="mt-1 text-sm text-muted-foreground">{recovery ? 'Choose a new password for your admin account.' : 'We will email you a secure reset link.'}</p>
         {recovery ? (
           <form onSubmit={setNewPassword} className="mt-6 space-y-4">
-            <Field label="New password" htmlFor="pw"><Input id="pw" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
-            <Field label="Confirm password" htmlFor="pw2"><Input id="pw2" type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
+            <Field label="New password" htmlFor="pw"><PasswordInput id="pw" required value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+            <Field label="Confirm password" htmlFor="pw2"><PasswordInput id="pw2" required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
             {message ? <Alert variant={message.kind}>{message.text}</Alert> : null}
             <Button type="submit" size="lg" className="w-full" loading={busy}>Update Password</Button>
           </form>

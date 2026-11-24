@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import * as D from '@radix-ui/react-dialog'
 import * as Tip from '@radix-ui/react-tooltip'
 import {
   BarChart3, Bell, Building2, Calendar, ClipboardList, LayoutDashboard, LogOut, Menu as MenuIcon, Moon,
-  PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Sun, User, Users, Wallet,
+  PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Sun, User, Users, Wallet, Handshake, ShieldAlert,
 } from 'lucide-react'
 import { Logo, Mark } from './Logo'
 import { NotificationDropdown } from './NotificationDropdown'
@@ -13,40 +13,54 @@ import { Avatar } from '@/components/ui/avatar'
 import { SheetContent } from '@/components/ui/dialog'
 import { Menu } from '@/components/ui/menu'
 import { useConfirm } from '@/components/ui/feedback'
-import { useAdminSession } from '@/hooks/useAdminSession'
+import { useAdminSession, useCan } from '@/hooks/useAdminSession'
 import { useTheme } from '@/hooks/useTheme'
 import { adminOperations } from '@/lib/adminOperations'
 import { cn } from '@/lib/utils'
 
-type Item = { label: string; path: string; icon: typeof Users; superOnly?: boolean }
+type Item = { label: string; path: string; icon: typeof Users; perm: string }
 const groups: { title: string; items: Item[] }[] = [
   { title: 'Overview', items: [
-    { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { label: 'Analytics', path: '/analytics', icon: BarChart3 },
+    { label: 'Dashboard', path: '/', icon: LayoutDashboard, perm: 'dashboard.view' },
+    { label: 'Analytics', path: '/analytics', icon: BarChart3, perm: 'analytics.view' },
   ] },
   { title: 'Manage', items: [
-    { label: 'Users', path: '/users', icon: Users },
-    { label: 'Events', path: '/events', icon: Calendar },
-    { label: 'Venues', path: '/venues', icon: Building2 },
+    { label: 'Users', path: '/users', icon: Users, perm: 'users.view' },
+    { label: 'Events', path: '/events', icon: Calendar, perm: 'events.view' },
+    { label: 'Venues', path: '/venues', icon: Building2, perm: 'venues.view' },
+    { label: 'Ambassadors', path: '/ambassadors', icon: Handshake, perm: 'ambassadors.view' },
   ] },
-  { title: 'Money', items: [{ label: 'Cashouts', path: '/cashouts', icon: Wallet }] },
+  { title: 'Money', items: [{ label: 'Cashouts', path: '/cashouts', icon: Wallet, perm: 'cashouts.view' }] },
   { title: 'System', items: [
-    { label: 'Notifications', path: '/notifications', icon: Bell },
-    { label: 'Audit Log', path: '/audit', icon: ClipboardList },
-    { label: 'Admins', path: '/admins', icon: ShieldCheck, superOnly: true },
-    { label: 'Settings', path: '/settings', icon: Settings },
+    { label: 'Notifications', path: '/notifications', icon: Bell, perm: 'notifications.view' },
+    { label: 'Audit Log', path: '/audit', icon: ClipboardList, perm: 'audit.view' },
+    { label: 'Admins', path: '/admins', icon: ShieldCheck, perm: 'admins.view' },
+    { label: 'Settings', path: '/settings', icon: Settings, perm: 'settings.view' },
   ] },
 ]
 const bottom: Item[] = [
-  { label: 'Home', path: '/', icon: LayoutDashboard },
-  { label: 'Users', path: '/users', icon: Users },
-  { label: 'Events', path: '/events', icon: Calendar },
-  { label: 'Cashouts', path: '/cashouts', icon: Wallet },
-  { label: 'Alerts', path: '/notifications', icon: Bell },
+  { label: 'Home', path: '/', icon: LayoutDashboard, perm: 'dashboard.view' },
+  { label: 'Users', path: '/users', icon: Users, perm: 'users.view' },
+  { label: 'Events', path: '/events', icon: Calendar, perm: 'events.view' },
+  { label: 'Cashouts', path: '/cashouts', icon: Wallet, perm: 'cashouts.view' },
+  { label: 'Ambassadors', path: '/ambassadors', icon: Handshake, perm: 'ambassadors.view' },
+  { label: 'Alerts', path: '/notifications', icon: Bell, perm: 'notifications.view' },
 ]
 
-export function AdminLayout({ children, onNewNotification }: { children: React.ReactNode; onNewNotification?: () => void }) {
+/** Shown when a page is opened without the permission to see it. */
+export function NoAccess({ perm }: { perm: string }) {
+  return (
+    <div className="mx-auto mt-10 max-w-md rounded-3xl bg-background p-10 text-center shadow-soft ring-1 ring-black/[0.04]">
+      <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-red-50 text-red-500 dark:bg-red-950"><ShieldAlert className="h-8 w-8" /></span>
+      <h1 className="mt-5 text-xl font-extrabold">Access Denied</h1>
+      <p className="mt-2 text-sm text-muted-foreground">Your role does not include <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-bold">{perm}</code>. Ask a super admin if you need it.</p>
+    </div>
+  )
+}
+
+export function AdminLayout({ children, onNewNotification, perm }: { children: React.ReactNode; onNewNotification?: () => void; perm?: string }) {
   const session = useAdminSession()
+  const can = useCan()
   const location = useLocation()
   const navigate = useNavigate()
   const confirm = useConfirm()
@@ -54,9 +68,16 @@ export function AdminLayout({ children, onNewNotification }: { children: React.R
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === '1')
   const [sheetOpen, setSheetOpen] = useState(false)
 
-  const isSuper = session?.role === 'super_admin'
   const isActive = (path: string) => (path === '/' ? location.pathname === '/' : location.pathname.startsWith(path))
   const name = [session?.first_name, session?.last_name].filter(Boolean).join(' ') || session?.email || 'Admin'
+
+  // Page views go into the audit trail (shown when "page views" is ticked on the Audit Log)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      adminOperations.logEvent('page_view', location.pathname).catch(() => undefined)
+    }, 800)
+    return () => clearTimeout(t)
+  }, [location.pathname])
 
   const toggleCollapsed = () => {
     setCollapsed((c) => {
@@ -75,7 +96,7 @@ export function AdminLayout({ children, onNewNotification }: { children: React.R
   const nav = (compact: boolean, onNavigate?: () => void) => (
     <nav className="no-scrollbar flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-4" aria-label="Main">
       {groups.map((g) => {
-        const items = g.items.filter((i) => !i.superOnly || isSuper)
+        const items = g.items.filter((i) => can(i.perm))
         if (!items.length) return null
         return (
           <div key={g.title}>
@@ -134,7 +155,7 @@ export function AdminLayout({ children, onNewNotification }: { children: React.R
             <Avatar src={session?.avatar_url} name={name} className="h-9 w-9" />
             <span className="min-w-0">
               <span className="block truncate text-sm font-bold">{name}</span>
-              <span className="block truncate text-xs capitalize text-muted-foreground">{(session?.role || 'admin').replace('_', ' ')}</span>
+              <span className="block truncate text-xs text-muted-foreground">{session?.role_name || (session?.role || 'admin').replace('_', ' ')}</span>
             </span>
           </Link>
           <Button variant="ghost" size="icon-sm" onClick={logout} aria-label="Log out" className="text-red-600 hover:bg-red-50 dark:hover:bg-red-950"><LogOut /></Button>
@@ -195,7 +216,7 @@ export function AdminLayout({ children, onNewNotification }: { children: React.R
               }
               items={[
                 { label: 'My profile', icon: <User />, onSelect: () => navigate('/profile') },
-                { label: 'Settings', icon: <Settings />, onSelect: () => navigate('/settings') },
+                { label: 'Settings', icon: <Settings />, onSelect: () => navigate('/settings'), hidden: !can('settings.view') },
                 'separator',
                 { label: 'Log out', icon: <LogOut />, tone: 'danger', onSelect: logout },
               ]}
@@ -205,12 +226,12 @@ export function AdminLayout({ children, onNewNotification }: { children: React.R
 
         {/* Main */}
         <main className={cn('px-4 pb-32 pt-6 transition-[margin] duration-300 sm:px-6 md:pb-12 lg:px-8', collapsed ? 'md:ml-[76px]' : 'md:ml-64')}>
-          <div className="mx-auto max-w-7xl animate-fade-in">{children}</div>
+          <div className="mx-auto max-w-7xl animate-fade-in">{perm && session && !can(perm) ? <NoAccess perm={perm} /> : children}</div>
         </main>
 
         {/* Floating pill bottom nav on phones */}
         <nav className="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-md items-center justify-between rounded-full bg-gray-950/95 p-1.5 shadow-lift backdrop-blur md:hidden dark:bg-white/95" aria-label="Quick">
-          {bottom.map((item) => {
+          {bottom.filter((i) => can(i.perm)).slice(0, 5).map((item) => {
             const active = isActive(item.path)
             return (
               <Link

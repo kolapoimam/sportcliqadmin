@@ -4,7 +4,7 @@ import { CheckCircle2, KeyRound, ShieldCheck, Terminal } from 'lucide-react'
 import { AuthShell } from '@/components/AuthShell'
 import { Splash } from '@/components/RequireAdmin'
 import { Button } from '@/components/ui/button'
-import { Field, Input } from '@/components/ui/input'
+import { Field, Input, PasswordInput } from '@/components/ui/input'
 import { Alert, useToast } from '@/components/ui/feedback'
 import { Card } from '@/components/ui/card'
 import { adminOperations } from '@/lib/adminOperations'
@@ -51,9 +51,9 @@ export default function AdminSetup() {
     setSubmitting(true)
     try {
       await adminOperations.createFirstAdmin({ email: form.email.trim(), password: form.password, secretKey: form.secret, firstName: form.firstName.trim(), lastName: form.lastName.trim() })
-      toast.success('Super admin created', 'Signing you in now.')
+      toast.success('Super admin created', 'Next, set up two factor.')
       await adminOperations.login(form.email.trim(), form.password).then(
-        () => navigate('/', { replace: true }),
+        () => navigate('/mfa', { replace: true }),
         () => navigate('/login', { replace: true }),
       )
     } catch (err) {
@@ -101,13 +101,12 @@ export default function AdminSetup() {
             </div>
             <Field label="Email" htmlFor="email"><Input id="email" type="email" required value={form.email} onChange={set('email')} placeholder="you@sportcliq.com" /></Field>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Password" htmlFor="password" hint="8 characters or more"><Input id="password" type="password" required value={form.password} onChange={set('password')} /></Field>
-              <Field label="Confirm password" htmlFor="confirm"><Input id="confirm" type="password" required value={form.confirm} onChange={set('confirm')} /></Field>
+              <Field label="Password" htmlFor="password" hint="8 characters or more"><PasswordInput id="password" required value={form.password} onChange={set('password')} /></Field>
+              <Field label="Confirm password" htmlFor="confirm"><PasswordInput id="confirm" required value={form.confirm} onChange={set('confirm')} /></Field>
             </div>
             <Field label="Setup secret key" htmlFor="secret">
-              <div className="relative">
-                <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input id="secret" type="password" required value={form.secret} onChange={set('secret')} className="pl-10" />
+              <div>
+                <PasswordInput id="secret" required value={form.secret} onChange={set('secret')} icon={<KeyRound />} />
               </div>
             </Field>
             {error ? <Alert>{error}</Alert> : null}

@@ -1,8 +1,9 @@
 import * as React from 'react'
-import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Info, ShieldCheck, X, XCircle } from 'lucide-react'
+import { stepUp as verifyStepUp } from '@/lib/mfa'
 import { Modal } from './dialog'
 import { Button } from './button'
-import { Field, Textarea } from './input'
+import { CodeInput, Field, Textarea } from './input'
 import { cn } from '@/lib/utils'
 
 // ---------------- Toasts ----------------
@@ -41,6 +42,18 @@ type ConfirmResult = { ok: boolean; reason: string }
 
 const ConfirmCtx = React.createContext<((o: ConfirmOptions) => Promise<ConfirmResult>) | null>(null)
 
+const StepUpCtx = React.createContext<((purpose: string) => Promise<boolean>) | null>(null)
+
+/**
+ * Asks for a fresh authenticator code before a payout approval or delete.
+ * const stepUp = useStepUp(); if (!(await stepUp('Approve payout'))) return
+ */
+export function useStepUp() {
+  const fn = React.useContext(StepUpCtx)
+  if (!fn) throw new Error('useStepUp needs FeedbackProvider')
+  return fn
+}
+
 /** const confirm = useConfirm(); const { ok, reason } = await confirm({...}) */
 export function useConfirm() {
   const fn = React.useContext(ConfirmCtx)
@@ -52,6 +65,40 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<ToastItem[]>([])
   const [confirmState, setConfirmState] = React.useState<(ConfirmOptions & { resolve: (r: ConfirmResult) => void }) | null>(null)
   const [reason, setReason] = React.useState('')
+  const [stepState, setStepState] = React.useState<{ purpose: string; resolve: (ok: boolean) => void } | null>(null)
+  const [code, setCode] = React.useState('')
+  const [stepError, setStepError] = React.useState<string | null>(null)
+  const [verifying, setVerifying] = React.useState(false)
+
+  const stepUp = React.useCallback(
+    (purpose: string) =>
+      new Promise<boolean>((resolve) => {
+        setCode('')
+        setStepError(null)
+        setStepState({ purpose, resolve })
+      }),
+    [],
+  )
+
+  const closeStep = (ok: boolean) => {
+    stepState?.resolve(ok)
+    setStepState(null)
+  }
+
+  const submitCode = async (c: string) => {
+    if (c.length !== 6) return
+    setVerifying(true)
+    setStepError(null)
+    try {
+      await verifyStepUp(c)
+      closeStep(true)
+    } catch (e) {
+      setStepError(e instanceof Error ? (/invalid/i.test(e.message) ? 'That code is wrong or expired. Try the new one.' : e.message) : 'Could not verify the code')
+      setCode('')
+    } finally {
+      setVerifying(false)
+    }
+  }
 
   const push = React.useCallback((t: Omit<ToastItem, 'id'>) => {
     const id = Date.now() + Math.random()
@@ -80,7 +127,25 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastCtx.Provider value={{ push }}>
       <ConfirmCtx.Provider value={confirm}>
+      <StepUpCtx.Provider value={stepUp}>
         {children}
+        <Modal
+          open={Boolean(stepState)}
+          onOpenChange={(o) => !o && closeStep(false)}
+          size="sm"
+          icon={<ShieldCheck />}
+          title="Confirm with your authenticator"
+          description={<>Enter the 6 digit code from the <b>SportCliq Admin</b> entry in Google Authenticator to {stepState?.purpose.toLowerCase()}.</>}
+          footer={
+            <>
+              <Button variant="outline" onClick={() => closeStep(false)}>Cancel</Button>
+              <Button onClick={() => submitCode(code)} loading={verifying} disabled={code.length !== 6}>Verify</Button>
+            </>
+          }
+        >
+          <CodeInput value={code} onChange={setCode} onComplete={submitCode} disabled={verifying} />
+          {stepError ? <p className="mt-2 text-center text-sm font-medium text-red-600">{stepError}</p> : null}
+        </Modal>
         <Modal
           open={Boolean(confirmState)}
           onOpenChange={(o) => !o && close(false)}
@@ -125,6 +190,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
             </div>
           ))}
         </div>
+      </StepUpCtx.Provider>
       </ConfirmCtx.Provider>
     </ToastCtx.Provider>
   )

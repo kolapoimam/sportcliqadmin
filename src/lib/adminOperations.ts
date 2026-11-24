@@ -1,10 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 import { supabase, SITE_URL, MAIN_APP_URL } from './supabase'
-import { normalizeRole, setAdminSession, clearAdminSession, getAdminSession, type AdminSession } from './session'
+import { setAdminSession, clearAdminSession, sessionFromRecord, type AdminSession } from './session'
 
 // ---------- Types ----------
 
 export interface Metrics {
+  total_commission?: number
+  active_ambassadors?: number
   total_users: number
   total_events: number
   pending_cashouts: number
@@ -23,7 +25,100 @@ export interface Dashboard {
   recent_activity: { id: string; action: string; details: string | null; created_at: string; admin_email: string | null }[]
 }
 
+export interface CommissionRules {
+  organizer: { free_count: number; rate: number }
+  venue: { free_count: number; rate: number }
+  ambassador: { rate: number }
+}
+
+export interface RoleRow {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  permissions: string[]
+  is_system: boolean
+  members: number
+  created_at: string
+}
+export interface PermissionModule { module: string; label: string; actions: string[] }
+
+export interface InviteRow { id: string; email: string; first_name: string | null; last_name: string | null; role_name: string | null; status: string; expires_at: string; created_at: string; invited_by: string | null }
+export interface InviteInfo { email: string; first_name: string | null; last_name: string | null; role_name: string | null; expires_at: string; invited_by: string | null; status: string }
+
+export interface AmbassadorRow {
+  id: string
+  full_name: string
+  email: string | null
+  phone: string | null
+  city: string | null
+  state: string | null
+  status: 'active' | 'paused' | 'exited'
+  commission_rate: number | null
+  onboarded_at: string
+  bank_name: string | null
+  account_number: string | null
+  account_name: string | null
+  notes: string | null
+  venues: number
+  events: number
+  revenue: number
+  commission: number
+  earned: number
+  earned_30d: number
+  paid: number
+  pending: number
+  balance: number
+  last_paid: string | null
+}
+export interface AmbassadorAssignment {
+  id: string
+  entity_type: 'venue' | 'match' | 'cycling'
+  entity_id: string
+  active: boolean
+  assigned_at: string
+  effective_from: string
+  unassigned_at: string | null
+  assigned_by: string | null
+  name: string
+  subtitle: string | null
+  revenue: number
+  commission: number
+  earning: number
+}
+export interface AmbassadorPayout {
+  id: string
+  amount: number
+  status: 'pending' | 'paid' | 'cancelled'
+  method: string
+  reference: string | null
+  note: string | null
+  period_start: string | null
+  period_end: string | null
+  created_at: string
+  paid_at: string | null
+  created_by: string | null
+  paid_by: string | null
+  cancel_reason: string | null
+}
+export interface AmbassadorDetail {
+  assignments: AmbassadorAssignment[]
+  payouts: AmbassadorPayout[]
+  monthly: { month: string; earning: number; revenue: number }[]
+  ledger: { assignment_id: string; entity_type: string; entity_id: string; at: string; revenue: number; commission: number; rate: number; earning: number }[]
+}
+export interface AssignableRow { id: string; name: string; subtitle: string | null; current: string | null }
+
+export interface AuditPage {
+  total: number
+  rows: AuditLogRow[]
+  actions: string[]
+  entities: string[]
+  admins: { id: string; email: string }[]
+}
+
 export interface Settings {
+  commission_rules?: CommissionRules
   commission_rates?: { match: number; cycling: number; venue: number }
   platform?: { cashout_min?: number; currency?: string }
   setup_secret_set?: boolean
@@ -42,6 +137,9 @@ export interface AdminNotification {
   sent_at: string
   recipients: number | null
   status: string | null
+  push_sent?: number | null
+  email_sent?: number | null
+  delivery_error?: string | null
 }
 
 export interface UserRow {
@@ -150,6 +248,12 @@ export interface AdminRow {
   id: string
   email: string
   role: string
+  role_id: string | null
+  role_name: string | null
+  role_key: string | null
+  mfa_enabled: boolean
+  providers: string[]
+  avatar_url: string | null
   status: string
   last_login: string | null
   created_at: string
@@ -162,13 +266,22 @@ export interface AuditLogRow {
   id: string
   admin_id: string | null
   admin_email: string
+  admin_name?: string | null
   action: string
   details: string | null
   ip_address: string | null
+  user_agent?: string | null
+  entity_type?: string | null
+  entity_id?: string | null
+  metadata?: { operation?: string; changes?: Record<string, { from: unknown; to: unknown }> } & Record<string, unknown> | null
+  aal?: string | null
+  auth_method?: string | null
   created_at: string
 }
 
 export interface Analytics {
+  commission_rules?: CommissionRules
+  free_activities?: number
   period_unit: 'week' | 'month'
   metrics: { total_users: number; new_users: number; total_events: number; total_revenue: number; active_venues: number }
   revenue: { match: number; cycling: number; venue: number }
@@ -185,7 +298,31 @@ export interface Analytics {
 
 async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.rpc(fn, args)
-  if (error) throw error
+  if (error) {
+    if (error.message?.startsWith('MFA_REQUIRED') && !window.location.pathname.startsWith('/mfa')) {
+      window.location.assign('/mfa')
+    }
+    throw error
+  }
+  return data as T
+}
+
+/** Calls the admin-dispatch edge function (push, email, invite emails). */
+async function dispatch<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('admin-dispatch', { body })
+  if (error) {
+    let message = error.message
+    try {
+      const ctx = (error as { context?: Response }).context
+      if (ctx && typeof ctx.json === 'function') {
+        const j = await ctx.json()
+        if (j?.error) message = j.error
+      }
+    } catch {
+      /* keep message */
+    }
+    throw new Error(/Failed to send a request|FunctionsFetchError|not found/i.test(message) ? 'The admin-dispatch function is not deployed yet. Run the "Deploy admin Supabase functions" GitHub Action.' : message)
+  }
   return data as T
 }
 
@@ -207,10 +344,25 @@ async function signUpLogin(email: string, password: string) {
 
 export const adminOperations = {
   // Auth
+  /** Password sign in. Two factor comes next on the /mfa page. */
   async login(email: string, password: string): Promise<AdminSession> {
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
     if (authError) throw authError
+    const session = await this.checkAdmin()
+    await rpc('admin_log_event', { p_action: 'login_password', p_details: `Password sign in by ${session.email}` }).catch(() => undefined)
+    return session
+  },
 
+  async loginWithGoogle() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${SITE_URL}/auth/callback`, queryParams: { prompt: 'select_account' } },
+    })
+    if (error) throw error
+  },
+
+  /** Confirms the signed in user is an active admin. Signs out if not. */
+  async checkAdmin(): Promise<AdminSession> {
     const record = await rpc<Record<string, unknown> | null>('admin_get_session').catch(async (e) => {
       await supabase.auth.signOut()
       throw e
@@ -219,30 +371,16 @@ export const adminOperations = {
       await supabase.auth.signOut()
       throw new Error('This account does not have admin access.')
     }
-    const session: AdminSession = {
-      id: String(record.id),
-      email: String(record.email),
-      role: normalizeRole(String(record.role)),
-      permissions: Array.isArray(record.permissions) ? (record.permissions as string[]) : [],
-      first_name: (record.first_name as string) ?? null,
-      last_name: (record.last_name as string) ?? null,
-      avatar_url: (record.avatar_url as string) ?? null,
-    }
+    const session = sessionFromRecord(record)
     setAdminSession(session)
-    await supabase
-      .from('audit_logs')
-      .insert({ admin_id: session.id, action: 'login', details: `Admin ${session.email} logged in`, ip_address: window.location.hostname })
     return session
   },
 
+  logEvent: (action: string, details?: string, entityType?: string, entityId?: string, metadata?: Record<string, unknown>) =>
+    rpc<void>('admin_log_event', { p_action: action, p_details: details ?? null, p_entity_type: entityType ?? null, p_entity_id: entityId ?? null, p_metadata: metadata ?? null }),
+
   async logout() {
-    const s = getAdminSession()
-    if (s) {
-      await supabase
-        .from('audit_logs')
-        .insert({ admin_id: s.id, action: 'logout', details: `Admin ${s.email} logged out`, ip_address: window.location.hostname })
-        .then(() => undefined, () => undefined)
-    }
+    await rpc('admin_log_event', { p_action: 'logout', p_details: 'Signed out' }).catch(() => undefined)
     clearAdminSession()
     await supabase.auth.signOut()
   },
@@ -258,15 +396,7 @@ export const adminOperations = {
       clearAdminSession()
       return null
     }
-    const session: AdminSession = {
-      id: String(record.id),
-      email: String(record.email),
-      role: normalizeRole(String(record.role)),
-      permissions: Array.isArray(record.permissions) ? (record.permissions as string[]) : [],
-      first_name: (record.first_name as string) ?? null,
-      last_name: (record.last_name as string) ?? null,
-      avatar_url: (record.avatar_url as string) ?? null,
-    }
+    const session = sessionFromRecord(record)
     setAdminSession(session)
     return session
   },
@@ -298,8 +428,7 @@ export const adminOperations = {
   getDashboard: () => rpc<Dashboard>('admin_get_dashboard'),
   getAnalytics: (start: string, end: string) => rpc<Analytics>('admin_get_analytics', { p_start: start, p_end: end }),
   getSettings: () => rpc<Settings>('admin_get_settings'),
-  setCommissionRates: (rates: { match: number; cycling: number; venue: number }) =>
-    rpc<void>('admin_set_commission_rates', { p_rates: rates }),
+  setCommissionRules: (rules: CommissionRules) => rpc<void>('admin_set_commission_rules', { p_rules: rules }),
 
   // Users
   getUsers: (params: { page: number; perPage: number; category: string; start: string | null; end: string | null; search?: string }) =>
@@ -330,8 +459,8 @@ export const adminOperations = {
   // Cashouts
   getCashouts: (status: string, start: string | null, end: string | null) =>
     rpc<CashoutRow[]>('admin_get_cashouts', { p_status: status, p_start: start, p_end: end }),
-  updateCashoutStatus: (source: string, id: string, status: 'approved' | 'rejected', reason?: string) =>
-    rpc<void>('admin_update_cashout_status', { p_source: source, p_id: id, p_status: status, p_reason: reason ?? null }),
+  updateCashoutStatus: (source: string, id: string, status: 'approved' | 'rejected', reason?: string, reference?: string) =>
+    rpc<void>('admin_update_cashout_status', { p_source: source, p_id: id, p_status: status, p_reason: reason ?? null, p_reference: reference ?? null }),
 
   // Venues
   getVenues: () => rpc<VenueRow[]>('admin_get_venues'),
@@ -358,6 +487,8 @@ export const adminOperations = {
     const { error } = await supabase.from('notifications').update({ unread: false, read_at: new Date().toISOString() }).eq('id', id)
     if (error) throw error
   },
+  dispatchNotification: (id: string) =>
+    dispatch<{ ok: boolean; status: string; push_sent: number; email_sent: number; recipients: number; error?: string }>({ action: 'notification', notification_id: id }),
   markAllAlertsRead: () => rpc<void>('admin_mark_all_alerts_read'),
   deleteNotification: (id: string) => rpc<void>('admin_delete_notification', { p_id: id }),
   sendNotification: (p: { type: string; target: string; targetId: string | null; title: string; message: string }) =>
@@ -370,7 +501,14 @@ export const adminOperations = {
     }),
 
   // Audit
-  getAuditLogs: (action?: string) => rpc<AuditLogRow[]>('admin_get_audit_logs', { p_action: action && action !== 'all' ? action : null, p_limit: 1000 }),
+  getAuditLogs: (f: { action?: string; admin?: string; entity?: string; start?: string | null; end?: string | null; search?: string; includeViews?: boolean; limit: number; offset: number }) =>
+    rpc<AuditPage>('admin_get_audit_logs_v2', {
+      p_action: f.action && f.action !== 'all' ? f.action : null,
+      p_admin: f.admin && f.admin !== 'all' ? f.admin : null,
+      p_entity_type: f.entity && f.entity !== 'all' ? f.entity : null,
+      p_start: f.start ?? null, p_end: f.end ?? null, p_search: f.search || null,
+      p_include_views: Boolean(f.includeViews), p_limit: f.limit, p_offset: f.offset,
+    }),
   log: (action: string, details: string) =>
     rpc<void>('admin_log', { p_action: action, p_details: details, p_ip: window.location.hostname }),
 
@@ -386,7 +524,48 @@ export const adminOperations = {
       p_last: p.lastName || null,
     })
   },
-  setAdminRole: (id: string, role: 'admin' | 'super_admin') => rpc<void>('admin_set_admin_role', { p_admin_id: id, p_role: role }),
+  assignRole: (adminId: string, roleId: string) => rpc<void>('admin_assign_role', { p_admin_id: adminId, p_role_id: roleId }),
+  resetAdminMfa: (adminId: string) => rpc<void>('admin_reset_admin_mfa', { p_admin_id: adminId }),
+
+  // Roles
+  listRoles: () => rpc<{ roles: RoleRow[]; catalog: PermissionModule[] }>('admin_list_roles'),
+  saveRole: (id: string | null, name: string, description: string, permissions: string[]) =>
+    rpc<string>('admin_save_role', { p_id: id, p_name: name, p_description: description, p_permissions: permissions }),
+  deleteRole: (id: string) => rpc<void>('admin_delete_role', { p_id: id }),
+
+  // Invites
+  createInvite: (email: string, roleId: string, firstName?: string, lastName?: string) =>
+    rpc<{ id: string; token: string; email: string; role_name: string; expires_at: string }>('admin_create_invite', { p_email: email, p_role_id: roleId, p_first: firstName || null, p_last: lastName || null }),
+  emailInvite: (p: { email: string; link: string; role_name: string; inviter: string }) => dispatch<{ ok: boolean }>({ action: 'invite', ...p }),
+  listInvites: () => rpc<InviteRow[]>('admin_list_invites'),
+  revokeInvite: (id: string) => rpc<void>('admin_revoke_invite', { p_id: id }),
+  inviteInfo: (token: string) => rpc<InviteInfo | null>('admin_invite_info', { p_token: token }),
+  async acceptInvite(token: string, email: string, password: string, firstName: string, lastName: string) {
+    await signUpLogin(email, password)
+    const res = await rpc<{ ok: boolean; error?: string }>('admin_accept_invite', { p_token: token, p_password: password, p_first: firstName || null, p_last: lastName || null })
+    if (!res?.ok) throw new Error(res?.error || 'Could not accept the invite')
+    return res
+  },
+  async acceptInviteOAuth(token: string) {
+    const res = await rpc<{ ok: boolean; error?: string }>('admin_accept_invite_oauth', { p_token: token })
+    if (!res?.ok) throw new Error(res?.error || 'Could not accept the invite')
+    return res
+  },
+
+  // Ambassadors
+  getAmbassadors: () => rpc<AmbassadorRow[]>('admin_get_ambassadors'),
+  getAmbassador: (id: string) => rpc<AmbassadorDetail>('admin_get_ambassador', { p_id: id }),
+  saveAmbassador: (id: string | null, data: Record<string, string>) => rpc<string>('admin_save_ambassador', { p_id: id, p_data: data }),
+  setAmbassadorStatus: (id: string, status: string) => rpc<void>('admin_set_ambassador_status', { p_id: id, p_status: status }),
+  deleteAmbassador: (id: string) => rpc<void>('admin_delete_ambassador', { p_id: id }),
+  assignToAmbassador: (ambassadorId: string, type: string, entityId: string, effectiveFrom?: string | null) =>
+    rpc<string>('admin_assign_to_ambassador', { p_ambassador: ambassadorId, p_entity_type: type, p_entity_id: entityId, p_effective_from: effectiveFrom ?? null }),
+  unassign: (assignmentId: string) => rpc<void>('admin_unassign_from_ambassador', { p_assignment: assignmentId }),
+  searchAssignable: (type: string, q: string) => rpc<AssignableRow[]>('admin_search_assignable', { p_type: type, p_query: q || null }),
+  createAmbassadorPayout: (id: string, amount: number, note?: string, start?: string | null, end?: string | null) =>
+    rpc<string>('admin_create_ambassador_payout', { p_ambassador: id, p_amount: amount, p_note: note ?? null, p_start: start || null, p_end: end || null }),
+  markAmbassadorPayoutPaid: (payoutId: string, reference: string) => rpc<void>('admin_mark_ambassador_payout_paid', { p_payout: payoutId, p_reference: reference }),
+  cancelAmbassadorPayout: (payoutId: string, reason: string) => rpc<void>('admin_cancel_ambassador_payout', { p_payout: payoutId, p_reason: reason }),
 
   // Profile
   async uploadAvatar(adminId: string, file: File) {
