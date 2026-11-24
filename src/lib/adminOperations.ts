@@ -365,10 +365,16 @@ async function signUpLogin(email: string, password: string, firstName?: string, 
     email, password,
     options: { emailRedirectTo: `${SITE_URL}/login`, data: { first_name, last_name, full_name: `${first_name} ${last_name}` } },
   })
+  if (error && /database error/i.test(error.message)) {
+    throw new Error(SIGNUP_DB_HELP)
+  }
   if (error && !/already|registered|exists/i.test(error.message)) {
     console.warn('Sign up step returned', error.message)
   }
 }
+
+export const SIGNUP_DB_HELP =
+  'Supabase could not save the new login (Database error saving new user). In the Supabase SQL editor run supabase/STEP0_diagnose_and_fix_signups.sql from the admin portal repo, then try again.'
 
 // ---------- Operations ----------
 
