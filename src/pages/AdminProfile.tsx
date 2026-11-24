@@ -125,7 +125,7 @@ export default function AdminProfile() {
       {loading ? <Card className="p-6"><Loading /></Card> : error ? <Alert>Error: {error}</Alert> : !profile ? <p className="text-sm text-muted-foreground">Admin profile not found.</p> : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.1fr_1fr]">
           <Card className="overflow-hidden">
-            <div className="h-28 bg-[radial-gradient(400px_200px_at_100%_0%,rgba(15,184,99,0.6),transparent_60%),linear-gradient(135deg,#03190f,#05964f)]" />
+            <div className="h-28 bg-[#35B551]" />
             <CardContent className="-mt-12">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
                 <div className="relative w-fit">

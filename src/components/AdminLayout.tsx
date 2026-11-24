@@ -4,10 +4,11 @@ import * as D from '@radix-ui/react-dialog'
 import * as Tip from '@radix-ui/react-tooltip'
 import {
   BarChart3, Bell, Building2, Calendar, ClipboardList, LayoutDashboard, LogOut, Menu as MenuIcon, Moon,
-  PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Sun, User, Users, Wallet, Handshake, ShieldAlert,
+  PanelLeftClose, PanelLeftOpen, Settings, Download, ShieldCheck, Sun, User, Users, Wallet, Handshake, ShieldAlert,
 } from 'lucide-react'
 import { Logo, Mark } from './Logo'
 import { NotificationDropdown } from './NotificationDropdown'
+import { useInstallApp } from './InstallApp'
 import { Button } from '@/components/ui/button'
 import { Avatar } from '@/components/ui/avatar'
 import { SheetContent } from '@/components/ui/dialog'
@@ -67,6 +68,7 @@ export function AdminLayout({ children, onNewNotification, perm }: { children: R
   const { dark, toggle } = useTheme()
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === '1')
   const [sheetOpen, setSheetOpen] = useState(false)
+  const installApp = useInstallApp()
 
   const isActive = (path: string) => (path === '/' ? location.pathname === '/' : location.pathname.startsWith(path))
   const name = [session?.first_name, session?.last_name].filter(Boolean).join(' ') || session?.email || 'Admin'
@@ -171,7 +173,7 @@ export function AdminLayout({ children, onNewNotification, perm }: { children: R
         <aside className={cn('fixed inset-y-0 left-0 z-40 hidden flex-col border-r bg-background transition-[width] duration-300 md:flex', collapsed ? 'w-[76px]' : 'w-64')}>
           <div className={cn('flex h-16 items-center border-b', collapsed ? 'justify-center px-2' : 'justify-between px-5')}>
             <Link to="/" className="flex items-center gap-2" aria-label="Dashboard">
-              {collapsed ? <Mark className="h-9 w-9" /> : <><Logo showText={false} /><span className="rounded-md bg-gray-950 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white dark:bg-white dark:text-gray-950">Admin</span></>}
+              {collapsed ? <Mark className="h-9 w-9" /> : <><Logo className="[&_img]:h-8" /><span className="rounded-md bg-gray-950 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white dark:bg-white dark:text-gray-950">Admin</span></>}
             </Link>
           </div>
           {nav(collapsed)}
@@ -191,7 +193,7 @@ export function AdminLayout({ children, onNewNotification, perm }: { children: R
             </D.Trigger>
             <SheetContent>
               <div className="flex h-16 items-center gap-2 border-b px-5">
-                <Logo showText={false} />
+                <Logo className="[&_img]:h-8" />
                 <span className="rounded-md bg-gray-950 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white dark:bg-white dark:text-gray-950">Admin</span>
               </div>
               {nav(false, () => setSheetOpen(false))}
@@ -217,6 +219,7 @@ export function AdminLayout({ children, onNewNotification, perm }: { children: R
               items={[
                 { label: 'My profile', icon: <User />, onSelect: () => navigate('/profile') },
                 { label: 'Settings', icon: <Settings />, onSelect: () => navigate('/settings'), hidden: !can('settings.view') },
+                { label: 'Install app', icon: <Download />, onSelect: installApp.run, hidden: !installApp.available },
                 'separator',
                 { label: 'Log out', icon: <LogOut />, tone: 'danger', onSelect: logout },
               ]}
@@ -229,8 +232,10 @@ export function AdminLayout({ children, onNewNotification, perm }: { children: R
           <div className="mx-auto max-w-7xl animate-fade-in">{perm && session && !can(perm) ? <NoAccess perm={perm} /> : children}</div>
         </main>
 
+        {installApp.modal}
+
         {/* Floating pill bottom nav on phones */}
-        <nav className="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-md items-center justify-between rounded-full bg-gray-950/95 p-1.5 shadow-lift backdrop-blur md:hidden dark:bg-white/95" aria-label="Quick">
+        <nav className="fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md items-center justify-between rounded-full bg-gray-950/95 p-1.5 shadow-lift backdrop-blur md:hidden dark:bg-white/95" aria-label="Quick">
           {bottom.filter((i) => can(i.perm)).slice(0, 5).map((item) => {
             const active = isActive(item.path)
             return (

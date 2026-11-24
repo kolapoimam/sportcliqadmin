@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Banknote, Bike, Building2, Check, CircleDollarSign, Handshake, Landmark, Link2, MapPin, Pause, Pencil, Play, Plus, Trash2, Trophy, Unlink, Wallet, XCircle,
+  Banknote, Bike, FileDown, Building2, Check, CircleDollarSign, Handshake, Landmark, Link2, MapPin, Pause, Pencil, Play, Plus, Trash2, Trophy, Unlink, Wallet, XCircle,
 } from 'lucide-react'
 import { AdminLayout } from '@/components/AdminLayout'
 import { ChartCanvas, chartColors } from '@/components/Chart'
@@ -185,10 +185,28 @@ export default function AdminAmbassadors() {
     }
   }
 
+  const payoutReceiptPdf = async (p: AmbassadorDetail['payouts'][number]) => {
+    if (!selected) return
+    try {
+      const { payoutReceipt } = await import('@/lib/report')
+      await payoutReceipt({
+        id: p.id, reference: p.reference || '', kind: 'Ambassador commission payout', payee: selected.account_name || selected.full_name,
+        bank: selected.bank_name, account: selected.account_number, amount: p.amount, method: 'Manual bank transfer',
+        approvedBy: p.paid_by, paidAt: p.paid_at, requestedAt: p.created_at,
+        note: p.note || (p.period_start ? `Earnings from ${formatDate(p.period_start)} to ${formatDate(p.period_end)}` : null),
+      })
+      adminOperations.logEvent('export', `Ambassador payout receipt ${naira(p.amount)} for ${selected.full_name}`, 'ambassador_payouts', p.id).catch(() => undefined)
+    } catch (e) {
+      toast.error('Could not make the receipt', errorMessage(e))
+    }
+  }
+
   const createPayout = async () => {
     if (!selected) return
     const amount = Number(payout.amount)
     if (!(amount > 0)) return toast.error('Enter an amount')
+    const { ok } = await confirm({ title: `Create a ${naira(amount)} payout?`, description: `This records a pending payout for ${selected.full_name} and takes it off their balance until it is paid or cancelled.`, confirmText: 'Create payout', icon: <Banknote /> })
+    if (!ok) return
     setBusy(true)
     try {
       await adminOperations.createAmbassadorPayout(selected.id, amount, payout.note, payout.start || null, payout.end || null)
@@ -214,7 +232,7 @@ export default function AdminAmbassadors() {
     if (!(await stepUp('approve this payout'))) return
     try {
       await adminOperations.markAmbassadorPayoutPaid(id, reason)
-      toast.success('Payout marked as paid')
+      toast.success('Payout marked as paid', 'Download the receipt from the payouts list.')
       loadDetail(selected.id)
       load()
     } catch (e) {
@@ -259,6 +277,8 @@ export default function AdminAmbassadors() {
 
   const ledgerRows = detail?.ledger ?? []
   const { pageRows: ledgerPage, pagination: ledgerPaging } = usePaged(ledgerRows, 10)
+  const { pageRows: payoutPage, pagination: payoutPaging } = usePaged(detail?.payouts ?? [], 10)
+  const { pageRows: assignPage, pagination: assignPaging } = usePaged(detail?.assignments ?? [], 10)
   const nameOf = (assignmentId: string) => detail?.assignments.find((a) => a.id === assignmentId)?.name ?? 'Assignment'
 
   return (
@@ -373,7 +393,7 @@ export default function AdminAmbassadors() {
                 <EmptyState icon={<Link2 />} title="Nothing assigned yet" text="Assign the venues and events this ambassador brought in." action={can('ambassadors.assign') && selected.status === 'active' ? <Button onClick={() => { setAssignOpen(true); setAssignPick(null) }}><Link2 /> Assign</Button> : undefined} />
               ) : (
                 <ul className="space-y-2">
-                  {detail.assignments.map((a) => {
+                  {assignPage.map((a) => {
                     const meta = TYPE_META[a.entity_type]
                     return (
                       <li key={a.id} className={cn('flex flex-col gap-3 rounded-2xl bg-muted/60 p-3 sm:flex-row sm:items-center', !a.active && 'opacity-60')}>
@@ -396,12 +416,13 @@ export default function AdminAmbassadors() {
                   })}
                 </ul>
               )}
+              <Pagination {...assignPaging} />
             </TabsContent>
 
             <TabsContent value="payouts">
               <Alert variant="info" className="mb-3" icon={<Landmark />}>Payouts are manual. Create a payout, send the money from the SportCliq bank account, then mark it paid with the transfer reference.</Alert>
               {!detail ? <Loading rows={3} /> : (
-                <DataTable rows={detail.payouts} rowKey={(p) => p.id} empty={<EmptyState icon={<Banknote />} title="No payouts yet" />}
+                <DataTable rows={payoutPage} rowKey={(p) => p.id} empty={<EmptyState icon={<Banknote />} title="No payouts yet" />}
                   columns={[
                     { key: 'amount', header: 'Amount', cell: (p) => <div><p className="font-extrabold">{naira(p.amount)}</p><p className="text-xs text-muted-foreground">{p.note || (p.period_start ? `${formatDate(p.period_start)} to ${formatDate(p.period_end)}` : 'Manual bank transfer')}</p></div> },
                     { key: 'status', header: 'Status', cell: (p) => <StatusBadge status={p.status} /> },
@@ -413,8 +434,9 @@ export default function AdminAmbassadors() {
                       <Button size="sm" onClick={() => markPaid(p.id, p.amount)}><Check /> Mark paid</Button>
                       <Button size="sm" variant="soft-danger" onClick={() => cancelPayout(p.id)}><XCircle /> Cancel</Button>
                     </>
-                  ) : null)} />
+                  ) : p.status === 'paid' ? <Button size="sm" variant="outline" onClick={() => payoutReceiptPdf(p)}><FileDown /> Receipt</Button> : null)} />
               )}
+              <Pagination {...payoutPaging} />
             </TabsContent>
 
             <TabsContent value="ledger">

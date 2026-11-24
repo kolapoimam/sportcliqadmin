@@ -86,8 +86,7 @@ export default function AdminDashboard() {
   return (
     <AdminLayout onNewNotification={load} perm="dashboard.view">
       {/* Hero */}
-      <div className="relative mb-6 overflow-hidden rounded-[32px] bg-[#03190f] p-6 text-white shadow-lift sm:p-8">
-        <div className="absolute inset-0 bg-[radial-gradient(600px_300px_at_100%_0%,rgba(15,184,99,0.45),transparent_60%),radial-gradient(400px_300px_at_0%_100%,rgba(5,150,79,0.35),transparent_60%)]" />
+      <div className="relative mb-6 overflow-hidden rounded-[32px] bg-[#0B1410] p-6 text-white shadow-lift sm:p-8">
         <div className="relative grid min-w-0 gap-6 lg:grid-cols-[1fr_1.1fr] lg:items-end">
           <div>
             <p className="flex items-center gap-2 text-sm font-semibold text-playarena-300"><Sparkles className="h-4 w-4" /> {greeting()}</p>

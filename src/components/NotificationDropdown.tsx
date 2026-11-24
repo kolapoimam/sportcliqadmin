@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications'
 import type { AdminNotification } from '@/lib/adminOperations'
 import { cn } from '@/lib/utils'
+import { useConfirm } from '@/components/ui/feedback'
 
 function iconFor(n: AdminNotification) {
   const text = `${n.link ?? ''} ${n.title}`.toLowerCase()
@@ -20,6 +21,12 @@ function iconFor(n: AdminNotification) {
 export function NotificationDropdown({ onNewNotification, emptyText = 'No notifications' }: { onNewNotification?: () => void; emptyText?: string }) {
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
+  const confirm = useConfirm()
+  const confirmMarkAll = async () => {
+    setOpen(false)
+    const { ok } = await confirm({ title: 'Mark all alerts as read?', description: 'Every admin alert in the bell is marked as read.', confirmText: 'Mark all read', icon: <CheckCheck /> })
+    if (ok) markAllRead()
+  }
   const { notifications, unreadCount, markRead, markAllRead } = useRealtimeNotifications(onNewNotification)
 
   const handleClick = async (n: AdminNotification) => {
@@ -44,7 +51,7 @@ export function NotificationDropdown({ onNewNotification, emptyText = 'No notifi
         <div className="flex items-center justify-between px-4 pb-2 pt-4">
           <p className="font-bold">Notifications</p>
           {unreadCount > 0 ? (
-            <button type="button" onClick={markAllRead} className="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-primary hover:underline">
+            <button type="button" onClick={confirmMarkAll} className="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-primary hover:underline">
               <CheckCheck className="h-3.5 w-3.5" /> Mark all read
             </button>
           ) : null}

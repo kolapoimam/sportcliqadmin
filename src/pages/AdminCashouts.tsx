@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Papa from 'papaparse'
-import { Check, CheckCircle2, Clock, Copy, Download, Eye, Landmark, Wallet, X, XCircle } from 'lucide-react'
+import { Check, CheckCircle2, Clock, Copy, Download, Eye, FileDown, Landmark, Wallet, X, XCircle } from 'lucide-react'
 import { AdminLayout } from '@/components/AdminLayout'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { DatePicker, SearchInput } from '@/components/ui/input'
@@ -77,7 +77,7 @@ export default function AdminCashouts() {
     try {
       await adminOperations.updateCashoutStatus(c.source, c.id, 'approved', undefined, reason)
       patch(c, { status: 'approved', rejection_reason: null })
-      toast.success('Cashout approved', `${naira(c.amount)} to ${c.organizer}`)
+      toast.success('Cashout approved', `${naira(c.amount)} to ${c.organizer}. Download the receipt from the row.`)
     } catch (e) {
       toast.error('Could not approve', errorMessage(e))
     } finally {
@@ -117,9 +117,30 @@ export default function AdminCashouts() {
     downloadBlob('﻿' + csv, `cashouts-${status}.csv`, 'text/csv;charset=utf-8')
   }
 
+  const receipt = async (c: CashoutRow) => {
+    setBusyId(c.id)
+    try {
+      const r = await adminOperations.cashoutReceipt(c.source, c.id)
+      const { payoutReceipt } = await import('@/lib/report')
+      await payoutReceipt({
+        id: c.id, reference: r.payout_reference || '', kind: `${c.type} cashout${c.event_title ? `, ${c.event_title}` : ''}`,
+        payee: c.account_name || c.organizer, bank: c.bank_name, account: c.account_number, amount: c.amount,
+        method: r.payout_method === 'manual_bank_transfer' || !r.payout_method ? 'Manual bank transfer' : r.payout_method,
+        approvedBy: r.reviewed_by || r.reviewer_email, paidAt: r.reviewed_at, requestedAt: c.created_at,
+      })
+      adminOperations.logEvent('export', `Payout receipt for ${c.type} cashout ${naira(c.amount)}`, c.source, c.id).catch(() => undefined)
+    } catch (e) {
+      toast.error('Could not make the receipt', errorMessage(e))
+    } finally {
+      setBusyId(null)
+    }
+  }
+  const isPaid = (c: CashoutRow) => ['approved', 'paid', 'completed', 'success'].includes(c.status.toLowerCase())
+
   const actions = (c: CashoutRow) => (
     <>
       <Button variant="ghost" size="icon-sm" aria-label="View cashout" onClick={() => setViewing(c)}><Eye /></Button>
+      {isPaid(c) ? <Button variant="ghost" size="icon-sm" aria-label="Download receipt" title="Download receipt" onClick={() => receipt(c)} disabled={busyId === c.id}><FileDown /></Button> : null}
       {c.status.toLowerCase() === 'pending' && can('cashouts.approve') ? (
         <>
           <Button size="sm" onClick={() => approve(c)} disabled={busyId === c.id}><Check /> Approve</Button>
@@ -211,7 +232,7 @@ export default function AdminCashouts() {
             <Button variant="soft-danger" onClick={() => reject(viewing)} disabled={busyId === viewing.id}><X /> Reject</Button>
             <Button onClick={() => approve(viewing)} disabled={busyId === viewing.id}><Check /> Approve</Button>
           </>
-        ) : null}
+        ) : viewing && isPaid(viewing) ? <Button variant="outline" onClick={() => receipt(viewing)} loading={busyId === viewing.id}><FileDown /> Download receipt</Button> : null}
       >
         {viewing ? (
           <div className="space-y-4">

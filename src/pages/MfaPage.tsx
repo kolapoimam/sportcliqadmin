@@ -5,7 +5,7 @@ import { AuthShell } from '@/components/AuthShell'
 import { Splash } from '@/components/RequireAdmin'
 import { Button } from '@/components/ui/button'
 import { CodeInput } from '@/components/ui/input'
-import { Alert, useToast } from '@/components/ui/feedback'
+import { Alert, useConfirm, useToast } from '@/components/ui/feedback'
 import { Card } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
 import { adminOperations } from '@/lib/adminOperations'
@@ -23,6 +23,7 @@ type Mode = { kind: 'loading' } | { kind: 'challenge'; factorId: string } | { ki
 export default function MfaPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const confirm = useConfirm()
   const toast = useToast()
   const [mode, setMode] = useState<Mode>({ kind: 'loading' })
   const [code, setCode] = useState('')
@@ -80,6 +81,8 @@ export default function MfaPage() {
   }
 
   const signOut = async () => {
+    const { ok } = await confirm({ title: 'Sign out?', description: 'You will need your password and authenticator code to sign in again.', confirmText: 'Sign out', tone: 'danger', icon: <LogOut /> })
+    if (!ok) return
     await adminOperations.logout()
     navigate('/login', { replace: true })
   }

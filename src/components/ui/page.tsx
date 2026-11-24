@@ -20,14 +20,14 @@ export function PageHeader({ title, description, children, eyebrow }: { title: s
 export type Tone = 'green' | 'blue' | 'violet' | 'amber' | 'rose' | 'teal' | 'gray' | 'black'
 
 export const toneStyles: Record<Tone, { chip: string; text: string; soft: string }> = {
-  green: { chip: 'bg-emerald-500 text-white shadow-emerald-500/30', text: 'text-emerald-600 dark:text-emerald-400', soft: 'from-emerald-50 dark:from-emerald-950/40' },
-  blue: { chip: 'bg-sky-500 text-white shadow-sky-500/30', text: 'text-sky-600 dark:text-sky-400', soft: 'from-sky-50 dark:from-sky-950/40' },
-  violet: { chip: 'bg-violet-500 text-white shadow-violet-500/30', text: 'text-violet-600 dark:text-violet-400', soft: 'from-violet-50 dark:from-violet-950/40' },
-  amber: { chip: 'bg-amber-500 text-white shadow-amber-500/30', text: 'text-amber-600 dark:text-amber-400', soft: 'from-amber-50 dark:from-amber-950/40' },
-  rose: { chip: 'bg-rose-500 text-white shadow-rose-500/30', text: 'text-rose-600 dark:text-rose-400', soft: 'from-rose-50 dark:from-rose-950/40' },
-  teal: { chip: 'bg-teal-500 text-white shadow-teal-500/30', text: 'text-teal-600 dark:text-teal-400', soft: 'from-teal-50 dark:from-teal-950/40' },
-  gray: { chip: 'bg-gray-500 text-white shadow-gray-500/30', text: 'text-gray-700 dark:text-gray-300', soft: 'from-gray-50 dark:from-gray-900/40' },
-  black: { chip: 'bg-gray-950 text-white shadow-gray-950/30 dark:bg-white dark:text-gray-950', text: 'text-foreground', soft: 'from-gray-100 dark:from-gray-900/60' },
+  green: { chip: 'bg-emerald-500 text-white shadow-emerald-500/30', text: 'text-emerald-600 dark:text-emerald-400', soft: 'bg-emerald-50 dark:bg-emerald-950/40' },
+  blue: { chip: 'bg-sky-500 text-white shadow-sky-500/30', text: 'text-sky-600 dark:text-sky-400', soft: 'bg-sky-50 dark:bg-sky-950/40' },
+  violet: { chip: 'bg-violet-500 text-white shadow-violet-500/30', text: 'text-violet-600 dark:text-violet-400', soft: 'bg-violet-50 dark:bg-violet-950/40' },
+  amber: { chip: 'bg-amber-500 text-white shadow-amber-500/30', text: 'text-amber-600 dark:text-amber-400', soft: 'bg-amber-50 dark:bg-amber-950/40' },
+  rose: { chip: 'bg-rose-500 text-white shadow-rose-500/30', text: 'text-rose-600 dark:text-rose-400', soft: 'bg-rose-50 dark:bg-rose-950/40' },
+  teal: { chip: 'bg-teal-500 text-white shadow-teal-500/30', text: 'text-teal-600 dark:text-teal-400', soft: 'bg-teal-50 dark:bg-teal-950/40' },
+  gray: { chip: 'bg-gray-500 text-white shadow-gray-500/30', text: 'text-gray-700 dark:text-gray-300', soft: 'bg-gray-50 dark:bg-gray-900/40' },
+  black: { chip: 'bg-gray-950 text-white shadow-gray-950/30 dark:bg-white dark:text-gray-950', text: 'text-foreground', soft: 'bg-gray-100 dark:bg-gray-900/60' },
 }
 
 export function StatTile({ label, value, icon, hint, tone = 'green', onClick, active, loading }: { label: string; value: React.ReactNode; icon?: React.ReactNode; hint?: React.ReactNode; tone?: Tone; onClick?: () => void; active?: boolean; loading?: boolean }) {
@@ -38,7 +38,7 @@ export function StatTile({ label, value, icon, hint, tone = 'green', onClick, ac
       type={onClick ? 'button' : undefined}
       onClick={onClick}
       className={cn(
-        'group relative overflow-hidden rounded-3xl bg-gradient-to-br to-background to-60% p-4 text-left shadow-soft ring-1 ring-black/[0.04] transition-all sm:p-5 dark:ring-white/[0.06]',
+        'group relative overflow-hidden rounded-3xl p-4 text-left shadow-soft ring-1 ring-black/[0.04] transition-all sm:p-5 dark:ring-white/[0.06]',
         t.soft,
         onClick && 'cursor-pointer hover:-translate-y-0.5 hover:shadow-lift',
         active && 'ring-2 ring-primary dark:ring-primary',
@@ -123,7 +123,7 @@ export function FilterBar({ children, className }: { children: React.ReactNode; 
   return <Card className={cn('mb-4 grid grid-cols-1 gap-3 p-3 sm:p-4 md:grid-cols-2 xl:grid-cols-4', className)}>{children}</Card>
 }
 
-export function Pagination({ page, pageSize, total, onPage, onPageSize, sizes = [10, 20, 50] }: { page: number; pageSize: number; total: number; onPage: (p: number) => void; onPageSize?: (s: number) => void; sizes?: number[] }) {
+export function Pagination({ page, pageSize, total, onPage, onPageSize, sizes = [10, 20, 50, 100] }: { page: number; pageSize: number; total: number; onPage: (p: number) => void; onPageSize?: (s: number) => void; sizes?: number[] }) {
   const pages = Math.max(1, Math.ceil(total / pageSize))
   if (total === 0) return null
   const from = (page - 1) * pageSize + 1

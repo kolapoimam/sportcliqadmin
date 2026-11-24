@@ -65,6 +65,7 @@ export default function AdminManagement() {
   }, [admins, search])
   const { pageRows, pagination } = usePaged(filtered, 10)
   const pendingInvites = invites.filter((i) => i.status === 'pending')
+  const invitePaged = usePaged(invites, 10)
 
   const self = (a: AdminRow) => a.email.toLowerCase() === (session?.email ?? '').toLowerCase()
   const isSuperUser = (session?.permissions ?? []).includes('*')
@@ -253,7 +254,7 @@ export default function AdminManagement() {
           <Card>
             <CardHeader icon={<Mail />} title="Invites" description="Links last 7 days. Cancel any you no longer need." />
             <CardContent>
-              <DataTable rows={invites} rowKey={(i) => i.id} empty={<EmptyState icon={<Mail />} title="No invites yet" action={can('admins.invite') ? <Button onClick={openInvite}><MailPlus /> Invite admin</Button> : undefined} />}
+              <DataTable rows={invitePaged.pageRows} rowKey={(i) => i.id} empty={<EmptyState icon={<Mail />} title="No invites yet" action={can('admins.invite') ? <Button onClick={openInvite}><MailPlus /> Invite admin</Button> : undefined} />}
                 columns={[
                   { key: 'email', header: 'Invitee', cell: (i) => <div className="flex items-center gap-3"><Avatar name={[i.first_name, i.last_name].filter(Boolean).join(' ') || i.email} className="h-9 w-9" /><div className="min-w-0"><p className="truncate font-bold">{[i.first_name, i.last_name].filter(Boolean).join(' ') || i.email}</p><p className="truncate text-xs text-muted-foreground">{i.email}</p></div></div> },
                   { key: 'role', header: 'Role', cell: (i) => i.role_name ?? 'N/A' },
@@ -263,6 +264,7 @@ export default function AdminManagement() {
                 ]}
                 actions={(i) => (i.status === 'pending' && can('admins.invite') ? <Button variant="soft-danger" size="sm" onClick={() => revoke(i)}><XCircle /> Cancel</Button> : null)}
               />
+              <Pagination {...invitePaged.pagination} />
             </CardContent>
           </Card>
         </TabsContent>

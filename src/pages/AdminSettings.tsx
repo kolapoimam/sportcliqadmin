@@ -122,6 +122,8 @@ export default function AdminSettings() {
 
   const saveRole = async () => {
     if (!editing) return
+    const { ok } = await confirm({ title: editing === 'new' ? 'Create this role?' : 'Save changes to this role?', description: editing === 'new' ? `${roleForm.name} gets ${roleForm.permissions.size} permissions.` : `Every admin with ${roleForm.name} gets the new permissions on their next action.`, confirmText: 'Save role', icon: <ShieldCheck /> })
+    if (!ok) return
     setSavingRole(true)
     try {
       await adminOperations.saveRole(editing === 'new' ? null : editing.id, roleForm.name, roleForm.description, [...roleForm.permissions])

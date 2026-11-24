@@ -86,6 +86,14 @@ Organisers and hosts pay nothing on their first 2 paid activities (matches and r
 
 The portal is not connected to a transfer service and never moves money. Cashouts and ambassador payouts are sent from the SportCliq bank account by hand, then approved in the portal with the transfer reference.
 
+## Push notifications
+
+Admins send push, email or both from Notifications. Each push carries a tap link and an optional image, and the OneSignal id is saved so the portal can show sent, delivered, clicks and failures. The SportCliq app can show admin messages in its own list with `app_my_notifications()` and report views, opens and clicks with `app_track_notification(id, 'view' | 'open' | 'click')`.
+
+## Install and privacy
+
+The portal installs as an app on phones and desktops (Install app in the account menu). It is hidden from search engines with robots.txt, robots meta tags and an X-Robots-Tag header. There is no sitemap.
+
 ## Local development
 
 ```bash

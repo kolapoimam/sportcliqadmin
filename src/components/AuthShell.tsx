@@ -1,5 +1,5 @@
 import { Bell, Calendar, DollarSign, ShieldCheck, Users } from 'lucide-react'
-import { Mark, Logo } from './Logo'
+import { Logo } from './Logo'
 
 const features = [
   { icon: Users, title: 'User Management', text: 'Find players, organizers and hosts in seconds.' },
@@ -12,12 +12,11 @@ const features = [
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh">
-      <section className="relative hidden w-[46%] overflow-hidden bg-[#03190f] p-12 text-white lg:flex lg:flex-col">
-        <div className="absolute inset-0 bg-[radial-gradient(700px_400px_at_90%_0%,rgba(15,184,99,0.35),transparent_60%),radial-gradient(600px_400px_at_0%_100%,rgba(5,150,79,0.3),transparent_60%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:44px_44px] [mask-image:linear-gradient(180deg,#000,transparent)]" />
+      <section className="relative hidden w-[46%] overflow-hidden bg-[#0B1410] p-12 text-white lg:flex lg:flex-col">
+        <div className="absolute inset-y-0 left-0 w-2 bg-[#35B551]" />
         <div className="relative flex items-center gap-3">
-          <Mark className="h-11 w-11" />
-          <span className="text-xl font-extrabold">Sport Cliq Admin</span>
+          <Logo onDark className="h-12" />
+          <span className="rounded-md bg-white px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-[#0B1410]">Admin</span>
         </div>
         <div className="relative mt-auto">
           <h2 className="max-w-md text-4xl font-extrabold leading-[1.1] tracking-tight">
@@ -36,9 +35,9 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           </ul>
         </div>
       </section>
-      <section className="relative flex flex-1 items-center justify-center bg-gradient-to-b from-playarena-50 to-canvas px-4 py-10 dark:from-gray-950 dark:to-canvas">
+      <section className="relative flex flex-1 items-center justify-center bg-canvas px-4 py-10">
         <div className="w-full max-w-[420px]">
-          <div className="mb-8 flex justify-center lg:hidden"><Logo /></div>
+          <div className="mb-8 flex justify-center lg:hidden"><Logo className="[&_img]:h-11" /></div>
           {children}
         </div>
       </section>

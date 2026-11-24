@@ -45,7 +45,7 @@ export default function AdminUserManagement() {
   const [users, setUsers] = useState<UserRow[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10)
   const [category, setCategory] = useState('all')
   const [dateFilter, setDateFilter] = useState<DateFilter>('all')
   const [customStart, setCustomStart] = useState('')
@@ -58,7 +58,7 @@ export default function AdminUserManagement() {
   const [editing, setEditing] = useState<UserRow | null>(null)
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', nickname: '', phone: '', state: '' })
   const [messaging, setMessaging] = useState<UserRow | null>(null)
-  const [msg, setMsg] = useState({ title: 'Message from Sport Cliq', message: '' })
+  const [msg, setMsg] = useState({ title: 'Message from SportCliq', message: '' })
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -174,7 +174,7 @@ export default function AdminUserManagement() {
       await adminOperations.sendNotification({ type: 'push', target: 'user', targetId: messaging.id, title: msg.title.trim(), message: msg.message.trim() })
       await adminOperations.performCustomAction(messaging.id, 'send_notification', targetTable(messaging))
       setMessaging(null)
-      setMsg({ title: 'Message from Sport Cliq', message: '' })
+      setMsg({ title: 'Message from SportCliq', message: '' })
       toast.success('Notification sent')
     } catch (e) {
       toast.error('Failed to perform action', errorMessage(e))
@@ -275,7 +275,7 @@ export default function AdminUserManagement() {
               empty={<EmptyState icon={<Users />} title="No users found" text="Try a different category, date or search." />}
             />
           )}
-          <Pagination page={page} pageSize={pageSize} total={total} onPage={setPage} onPageSize={setPageSize} sizes={[10, 20, 50, 100]} />
+          <Pagination page={page} pageSize={pageSize} total={total} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1) }} />
         </CardContent>
       </Card>
 

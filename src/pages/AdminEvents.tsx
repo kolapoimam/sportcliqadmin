@@ -178,7 +178,7 @@ export default function AdminEvents() {
 
   return (
     <AdminLayout perm="events.view">
-      <PageHeader eyebrow="Manage" title="Events" description="Matches and cycling events across Sport Cliq." />
+      <PageHeader eyebrow="Manage" title="Events" description="Matches and cycling events across SportCliq." />
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile tone="black" label="Total" value={counts.all ?? 0} icon={<Calendar />} onClick={() => setStatus('all')} active={status === 'all'} />

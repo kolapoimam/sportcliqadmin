@@ -5,7 +5,7 @@
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 
-  /* Sport Cliq green */
+  /* SportCliq green */
   --color-playarena-50: #ecfdf3;
   --color-playarena-100: #d1fae1;
   --color-playarena-200: #a6f4c7;
@@ -108,9 +108,8 @@
 }
 
 @utility skeleton {
-  background: linear-gradient(90deg, var(--color-muted) 25%, color-mix(in oklab, var(--color-muted) 60%, white) 50%, var(--color-muted) 75%);
-  background-size: 200% 100%;
-  animation: var(--animate-shimmer);
+  background: var(--color-muted);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -120,4 +119,9 @@
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }

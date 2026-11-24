@@ -82,7 +82,7 @@ export default function AdminVenues() {
     } else {
       const r = await confirm({
         title: next === 'verified' ? `Verify ${v.name}?` : `Move ${v.name} back to pending?`,
-        description: next === 'verified' ? 'It will show as a verified venue on Sport Cliq.' : 'It will lose its verified badge until you verify it again.',
+        description: next === 'verified' ? 'It will show as a verified venue on SportCliq.' : 'It will lose its verified badge until you verify it again.',
         confirmText: next === 'verified' ? 'Verify' : 'Set to pending', tone: next === 'verified' ? 'success' : 'default',
       })
       if (!r.ok) return
@@ -170,7 +170,7 @@ export default function AdminVenues() {
 
   return (
     <AdminLayout perm="venues.view">
-      <PageHeader eyebrow="Manage" title="Venues" description="Verify venues before they go live on Sport Cliq.">
+      <PageHeader eyebrow="Manage" title="Venues" description="Verify venues before they go live on SportCliq.">
         {can('venues.create') ? <Button onClick={() => openForm('new')}><Plus /> Add venue</Button> : null}
       </PageHeader>
 

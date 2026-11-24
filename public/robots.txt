@@ -1,0 +1,3 @@
+# SportCliq Admin is private. Nothing here should be crawled or indexed.
+User-agent: *
+Disallow: /

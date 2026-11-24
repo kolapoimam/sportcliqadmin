@@ -140,6 +140,19 @@ export interface AdminNotification {
   push_sent?: number | null
   email_sent?: number | null
   delivery_error?: string | null
+  image_url?: string | null
+  onesignal_id?: string | null
+  push_stats?: PushStats | null
+  stats_synced_at?: string | null
+  delivered_at?: string | null
+}
+
+export interface PushStats { successful?: number; failed?: number; errored?: number; converted?: number; received?: number; remaining?: number }
+export interface NotificationPerformance {
+  id: string; recipients: number; push_sent: number; email_sent: number; status: string | null; delivered_at: string | null; delivery_error: string | null
+  onesignal_id: string | null; push_stats: PushStats; stats_synced_at: string | null
+  inapp_views: number; inapp_opens: number; inapp_clicks: number
+  timeline: { hour: string; opens: number; clicks: number }[]
 }
 
 export interface UserRow {
@@ -279,16 +292,22 @@ export interface AuditLogRow {
   created_at: string
 }
 
+export interface AnalyticsTx { at: string; kind: 'match' | 'cycling' | 'venue'; title: string; sport: string; city: string; amount: number; rate: number; commission: number }
+export interface AnalyticsFilters { stream: string; sport: string; city: string }
+
 export interface Analytics {
   commission_rules?: CommissionRules
   free_activities?: number
-  period_unit: 'week' | 'month'
-  metrics: { total_users: number; new_users: number; total_events: number; total_revenue: number; active_venues: number }
+  period_unit: 'day' | 'week' | 'month'
+  metrics: { total_users: number; new_users: number; total_events: number; total_revenue: number; active_venues: number; total_commission?: number; transactions?: number; avg_ticket?: number }
+  options?: { sports: string[]; cities: string[] }
+  top_cities?: { city: string; revenue: number; count: number }[]
+  transactions_list?: AnalyticsTx[]
   revenue: { match: number; cycling: number; venue: number }
   commission: { match: number; cycling: number; venue: number }
   commission_rates: { match: number; cycling: number; venue: number }
   user_growth: { period: string; count: number }[]
-  revenue_trend: { period: string; match: number | null; cycling: number | null; venue: number | null }[]
+  revenue_trend: { period: string; match: number | null; cycling: number | null; venue: number | null; commission?: number }[]
   event_trend: { period: string; count: number }[]
   top_sports: { sport: string; count: number }[]
   top_venues: { id: string; name: string; city: string; events: number; revenue: number }[]
@@ -330,11 +349,22 @@ async function dispatch<T>(body: Record<string, unknown>): Promise<T> {
  * Creates a Supabase Auth login without touching the current admin's own session.
  * "Already registered" is fine: the database step links the existing login.
  */
-async function signUpLogin(email: string, password: string) {
+/** Letters only, as the app's profile table expects */
+const nameOrDefault = (v: string | undefined, fallback: string) => {
+  const clean = (v || '').replace(/[^a-zA-Z]/g, '')
+  return clean ? clean.charAt(0).toUpperCase() + clean.slice(1) : fallback
+}
+
+async function signUpLogin(email: string, password: string, firstName?: string, lastName?: string) {
   const url = import.meta.env.VITE_SUPABASE_URL as string
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string
   const temp = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, storageKey: 'sportcliq-admin-temp' } })
-  const { error } = await temp.auth.signUp({ email, password, options: { emailRedirectTo: `${SITE_URL}/login` } })
+  const first_name = nameOrDefault(firstName, nameOrDefault(email.split('@')[0], 'Admin'))
+  const last_name = nameOrDefault(lastName, 'Admin')
+  const { error } = await temp.auth.signUp({
+    email, password,
+    options: { emailRedirectTo: `${SITE_URL}/login`, data: { first_name, last_name, full_name: `${first_name} ${last_name}` } },
+  })
   if (error && !/already|registered|exists/i.test(error.message)) {
     console.warn('Sign up step returned', error.message)
   }
@@ -404,7 +434,7 @@ export const adminOperations = {
   setupStatus: () => rpc<{ available: boolean; secret_set: boolean; legacy_admins: number }>('admin_setup_status'),
 
   async createFirstAdmin(p: { email: string; password: string; secretKey: string; firstName?: string; lastName?: string }) {
-    await signUpLogin(p.email, p.password)
+    await signUpLogin(p.email, p.password, p.firstName, p.lastName)
     const res = await rpc<{ ok: boolean; error?: string }>('admin_bootstrap_super_admin', {
       p_email: p.email,
       p_password: p.password,
@@ -427,6 +457,17 @@ export const adminOperations = {
   getMetrics: () => rpc<Metrics>('admin_get_metrics'),
   getDashboard: () => rpc<Dashboard>('admin_get_dashboard'),
   getAnalytics: (start: string, end: string) => rpc<Analytics>('admin_get_analytics', { p_start: start, p_end: end }),
+  /** Filtered analytics. Falls back to the older function until the v4 SQL has been run. */
+  async getAnalyticsFiltered(start: string, end: string, f: AnalyticsFilters): Promise<Analytics> {
+    const opt = (v: string) => (v && v !== 'all' ? v : null)
+    try {
+      return await rpc<Analytics>('admin_get_analytics_v2', { p_start: start, p_end: end, p_stream: opt(f.stream), p_sport: opt(f.sport), p_city: opt(f.city) })
+    } catch (e) {
+      const msg = String((e as { message?: string })?.message ?? '')
+      if (!/admin_get_analytics_v2|PGRST202|Could not find the function/i.test(msg)) throw e
+      return rpc<Analytics>('admin_get_analytics', { p_start: start, p_end: end })
+    }
+  },
   getSettings: () => rpc<Settings>('admin_get_settings'),
   setCommissionRules: (rules: CommissionRules) => rpc<void>('admin_set_commission_rules', { p_rules: rules }),
 
@@ -491,14 +532,22 @@ export const adminOperations = {
     dispatch<{ ok: boolean; status: string; push_sent: number; email_sent: number; recipients: number; error?: string }>({ action: 'notification', notification_id: id }),
   markAllAlertsRead: () => rpc<void>('admin_mark_all_alerts_read'),
   deleteNotification: (id: string) => rpc<void>('admin_delete_notification', { p_id: id }),
-  sendNotification: (p: { type: string; target: string; targetId: string | null; title: string; message: string }) =>
-    rpc<AdminNotification>('admin_send_notification', {
-      p_type: p.type,
-      p_target: p.target,
-      p_target_id: p.targetId,
-      p_title: p.title,
-      p_message: p.message,
-    }),
+  async sendNotification(p: { type: string; target: string; targetId: string | null; title: string; message: string; link?: string; image?: string }) {
+    const base = { p_type: p.type, p_target: p.target, p_target_id: p.targetId, p_title: p.title, p_message: p.message }
+    try {
+      return await rpc<AdminNotification>('admin_send_notification_v2', { ...base, p_link: p.link || null, p_image: p.image || null })
+    } catch (e) {
+      const msg = String((e as { message?: string })?.message ?? '')
+      if (!/admin_send_notification_v2|PGRST202|Could not find the function/i.test(msg)) throw e
+      return rpc<AdminNotification>('admin_send_notification', base)
+    }
+  },
+  cashoutReceipt: (source: string, id: string) =>
+    rpc<{ payout_reference: string | null; payout_method: string | null; reviewed_at: string | null; reviewed_by: string | null; reviewer_email: string | null; status: string }>('admin_cashout_receipt', { p_source: source, p_id: id }),
+  notificationPerformance: (id: string) => rpc<NotificationPerformance>('admin_notification_performance', { p_id: id }),
+  notificationSummary: (ids: string[]) =>
+    rpc<Record<string, { push_stats: PushStats; views: number; opens: number; clicks: number }>>('admin_notification_summary', { p_ids: ids }),
+  refreshPushStats: (id: string) => dispatch<{ ok: boolean; stats: PushStats | null }>({ action: 'stats', notification_id: id }),
 
   // Audit
   getAuditLogs: (f: { action?: string; admin?: string; entity?: string; start?: string | null; end?: string | null; search?: string; includeViews?: boolean; limit: number; offset: number }) =>
@@ -516,7 +565,7 @@ export const adminOperations = {
   getAdmins: () => rpc<AdminRow[]>('admin_list_admins'),
   setAdminStatus: (id: string, status: 'active' | 'inactive') => rpc<void>('admin_set_admin_status', { p_admin_id: id, p_status: status }),
   async createAdmin(p: { email: string; password: string; role: string; firstName?: string; lastName?: string }) {
-    await signUpLogin(p.email, p.password)
+    await signUpLogin(p.email, p.password, p.firstName, p.lastName)
     return rpc<{ ok: boolean; id: string; existed: boolean }>('admin_create_admin', {
       p_email: p.email,
       p_role: p.role,
@@ -541,7 +590,7 @@ export const adminOperations = {
   revokeInvite: (id: string) => rpc<void>('admin_revoke_invite', { p_id: id }),
   inviteInfo: (token: string) => rpc<InviteInfo | null>('admin_invite_info', { p_token: token }),
   async acceptInvite(token: string, email: string, password: string, firstName: string, lastName: string) {
-    await signUpLogin(email, password)
+    await signUpLogin(email, password, firstName, lastName)
     const res = await rpc<{ ok: boolean; error?: string }>('admin_accept_invite', { p_token: token, p_password: password, p_first: firstName || null, p_last: lastName || null })
     if (!res?.ok) throw new Error(res?.error || 'Could not accept the invite')
     return res

@@ -44,7 +44,7 @@ export default function AdminSetup() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    if (!form.email || !form.password || !form.secret) return setError('Email, password and secret key are required.')
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.email || !form.password || !form.secret) return setError('Name, email, password and secret key are required.')
     if (!EMAIL_RE.test(form.email.trim())) return setError('Enter a valid email address.')
     if (form.password.length < 8) return setError('Password must be at least 8 characters.')
     if (form.password !== form.confirm) return setError('Passwords do not match.')
@@ -96,8 +96,8 @@ export default function AdminSetup() {
 
           <form onSubmit={submit} className="mt-6 space-y-4" noValidate>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="First name" htmlFor="first"><Input id="first" value={form.firstName} onChange={set('firstName')} /></Field>
-              <Field label="Last name" htmlFor="last"><Input id="last" value={form.lastName} onChange={set('lastName')} /></Field>
+              <Field label="First name" htmlFor="first"><Input id="first" required value={form.firstName} onChange={set('firstName')} /></Field>
+              <Field label="Last name" htmlFor="last"><Input id="last" required value={form.lastName} onChange={set('lastName')} /></Field>
             </div>
             <Field label="Email" htmlFor="email"><Input id="email" type="email" required value={form.email} onChange={set('email')} placeholder="you@sportcliq.com" /></Field>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -113,7 +113,7 @@ export default function AdminSetup() {
             <Button type="submit" size="lg" className="w-full" loading={submitting}>{submitting ? 'Creating admin...' : 'Create Super Admin'}</Button>
           </form>
           <div className="mt-5 rounded-2xl bg-amber-50 p-4 text-xs leading-relaxed text-amber-900 ring-1 ring-amber-600/20 dark:bg-amber-950 dark:text-amber-100">
-            Use a strong password and keep the secret key safe. If this email already has a Sport Cliq login, its password becomes the one you enter here.
+            Use a strong password and keep the secret key safe. If this email already has a SportCliq login, its password becomes the one you enter here.
           </div>
           <p className="mt-4 text-center text-sm"><Link to="/login" className="font-semibold text-primary hover:underline">Back to login</Link></p>
         </Card>

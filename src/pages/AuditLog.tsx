@@ -69,7 +69,7 @@ export default function AuditLog() {
   const [customEnd, setCustomEnd] = useState('')
   const [views, setViews] = useState(false)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10)
   const [selected, setSelected] = useState<AuditLogRow | null>(null)
   const [exporting, setExporting] = useState(false)
 
@@ -173,7 +173,7 @@ export default function AuditLog() {
         <CardHeader icon={<ClipboardList />} title={`Audit Logs (${(data?.total ?? 0).toLocaleString()})`} description="Tap an entry to see the full record." />
         <CardContent>
           {loading && !data ? <Loading rows={8} /> : <DataTable columns={columns} rows={rows} rowKey={(l) => l.id} onRowClick={setSelected} empty={<EmptyState icon={<ClipboardList />} title="No log entries match" />} />}
-          <Pagination page={page} pageSize={pageSize} total={data?.total ?? 0} onPage={setPage} onPageSize={setPageSize} sizes={[20, 50, 100]} />
+          <Pagination page={page} pageSize={pageSize} total={data?.total ?? 0} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1) }} />
         </CardContent>
       </Card>
 

@@ -89,8 +89,8 @@ export default function AcceptInvite() {
             <OrDivider />
             <form onSubmit={submit} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="First name" htmlFor="first"><Input id="first" value={form.first} onChange={(e) => setForm({ ...form, first: e.target.value })} /></Field>
-                <Field label="Last name" htmlFor="last"><Input id="last" value={form.last} onChange={(e) => setForm({ ...form, last: e.target.value })} /></Field>
+                <Field label="First name" htmlFor="first"><Input id="first" required value={form.first} onChange={(e) => setForm({ ...form, first: e.target.value })} /></Field>
+                <Field label="Last name" htmlFor="last"><Input id="last" required value={form.last} onChange={(e) => setForm({ ...form, last: e.target.value })} /></Field>
               </div>
               <Field label="Create a password" htmlFor="pw" hint="8 characters or more"><PasswordInput id="pw" icon={<Lock />} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="new-password" /></Field>
               <Field label="Confirm password" htmlFor="pw2"><PasswordInput id="pw2" icon={<Lock />} value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} autoComplete="new-password" /></Field>
