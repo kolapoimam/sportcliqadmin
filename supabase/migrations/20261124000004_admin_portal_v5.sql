@@ -130,7 +130,9 @@ declare
   v_status text := public.admin_enum_label('admins', 'status', array['active']);
 begin
   select id into v_user from auth.users where lower(email) = v_email order by created_at limit 1;
-  select id into v_role_id from public.admin_roles where key = 'super_admin' limit 1;
+  if to_regclass('public.admin_roles') is not null then
+    execute 'select id from public.admin_roles where key = ''super_admin'' limit 1' into v_role_id;
+  end if;
 
   if v_user is not null then
     -- Existing login: link it, confirm the email so password sign in works, and make it super admin
@@ -149,7 +151,7 @@ begin
   end if;
 
   if v_role_id is not null then
-    update public.admins set role_id = v_role_id where id = v_admin;
+    execute format('update public.admins set role_id = %L where id = %L', v_role_id, v_admin);
   end if;
 
   if not exists (select 1 from public.audit_logs where entity_type = 'admins' and entity_id = v_admin::text and details = 'Set as the first super admin by database setup') then

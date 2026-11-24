@@ -41,7 +41,7 @@ The browser never holds the service role key. Admin rights are checked in the da
 
 ### 1. Database
 
-Open `supabase/RUN_THIS_admin_portal_setup.sql`, paste all of it into the Supabase SQL editor and run it. It contains every portal update in order, is additive only, and is safe to run again on top of an earlier run.
+Run two files in the Supabase SQL editor, each one whole. First `supabase/STEP1_fix_new_users.sql`, which fixes "Database error saving new user" and needs nothing else. Then `supabase/STEP2_admin_portal_full_setup.sql`, which holds every portal update in order and makes kolapoimaam@gmail.com the first super admin. Both are additive and safe to run again.
 
 Then set your setup secret, once, with your own phrase of 12 characters or more:
 

@@ -1,4 +1,4 @@
--- SportCliq Admin Portal, update 3 (run after RUN_THIS_admin_portal_setup.sql)
+-- SportCliq Admin Portal, update 3 (run after updates 1 and 2)
 --
 -- Adds:
 --   * Roles and permissions (system roles plus your own custom roles)
