@@ -15,6 +15,7 @@ import { Alert, useConfirm, useToast } from '@/components/ui/feedback'
 import { useCan } from '@/hooks/useAdminSession'
 import { Detail, EmptyState, FilterBar, Loading, PageHeader, Pagination, Segmented } from '@/components/ui/page'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { v as rule } from '@/lib/validate'
 import { adminOperations, type UserRow } from '@/lib/adminOperations'
 import { dateBounds, downloadBlob, errorMessage, formatDate, formatDateTime, naira, type DateFilter } from '@/lib/utils'
 
@@ -151,6 +152,10 @@ export default function AdminUserManagement() {
 
   const saveEdit = async () => {
     if (!editing) return
+    const problem = rule.name(editForm.first_name, 'First name') || rule.name(editForm.last_name, 'Last name')
+      || (editForm.phone && !/^0\d{10}$/.test(editForm.phone) ? 'Phone numbers have 11 digits and start with 0' : null)
+      || (editForm.nickname && !/^[a-zA-Z0-9 ]{3,30}$/.test(editForm.nickname) ? 'Nicknames use 3 to 30 letters, numbers and spaces' : null)
+    if (problem) return toast.error('Check the details', problem)
     setBusy(true)
     try {
       const data: Record<string, string> = { first_name: editForm.first_name, last_name: editForm.last_name, phone: editForm.phone }
@@ -357,7 +362,7 @@ export default function AdminUserManagement() {
           <Field label="First name" htmlFor="e-first"><Input id="e-first" value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} /></Field>
           <Field label="Last name" htmlFor="e-last"><Input id="e-last" value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} /></Field>
           <Field label="Nickname" htmlFor="e-nick"><Input id="e-nick" value={editForm.nickname} onChange={(e) => setEditForm({ ...editForm, nickname: e.target.value })} /></Field>
-          <Field label="Phone" htmlFor="e-phone"><Input id="e-phone" inputMode="numeric" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value.replace(/\D/g, '') })} /></Field>
+          <Field label="Phone" htmlFor="e-phone"><Input id="e-phone" type="tel" inputMode="numeric" maxLength={11} placeholder="08012345678" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })} /></Field>
           <Field label="State" htmlFor="e-state" className="sm:col-span-2"><Input id="e-state" value={editForm.state} onChange={(e) => setEditForm({ ...editForm, state: e.target.value })} placeholder="e.g. Kwara" /></Field>
         </div>
       </Modal>

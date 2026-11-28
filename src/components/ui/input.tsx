@@ -109,3 +109,104 @@ export function CodeInput({ value, onChange, onComplete, autoFocus = true, disab
     />
   )
 }
+
+/** Naira amounts. Digits and one decimal point only, shown with thousands separators. */
+export function MoneyInput({ value, onChange, id, invalid, className, ...rest }: { value: string; onChange: (v: string) => void; id?: string; invalid?: boolean } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'>) {
+  const [focused, setFocused] = React.useState(false)
+  const shown = focused || !value ? value : Number(value).toLocaleString('en-NG', { maximumFractionDigits: 2 })
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">₦</span>
+      <Input
+        id={id}
+        inputMode="decimal"
+        autoComplete="off"
+        aria-invalid={invalid || undefined}
+        value={shown}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChange={(e) => {
+          let t = e.target.value.replace(/[^\d.]/g, '')
+          const [a, ...b] = t.split('.')
+          t = b.length ? `${a}.${b.join('').slice(0, 2)}` : a
+          onChange(t.replace(/^0+(?=\d)/, ''))
+        }}
+        className={cn('pl-8 font-semibold tabular-nums', invalid && 'border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/15', className)}
+        {...rest}
+      />
+    </div>
+  )
+}
+
+/** Phone numbers. Keeps digits and a leading plus. */
+export function PhoneInput({ value, onChange, invalid, className, ...rest }: { value: string; onChange: (v: string) => void; invalid?: boolean } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'>) {
+  return (
+    <Input
+      type="tel"
+      inputMode="tel"
+      autoComplete="tel"
+      maxLength={14}
+      placeholder="08012345678"
+      aria-invalid={invalid || undefined}
+      value={value}
+      onChange={(e) => onChange(e.target.value.replace(/(?!^\+)[^\d]/g, ''))}
+      className={cn('tabular-nums', invalid && 'border-red-500 focus-visible:border-red-500 focus-visible:ring-red-500/15', className)}
+      {...rest}
+    />
+  )
+}
+
+/**
+ * A text box with formatting buttons. Writes simple markdown (bold, italic, headings,
+ * bullet and numbered lists, links) that the app shows formatted.
+ */
+export function RichTextarea({ value, onChange, id, maxLength, placeholder, invalid }: { value: string; onChange: (v: string) => void; id?: string; maxLength?: number; placeholder?: string; invalid?: boolean }) {
+  const ref = React.useRef<HTMLTextAreaElement>(null)
+  const wrap = (before: string, after = before, fallback = 'text') => {
+    const el = ref.current
+    if (!el) return
+    const s = el.selectionStart, e = el.selectionEnd
+    const sel = value.slice(s, e) || fallback
+    const next = value.slice(0, s) + before + sel + after + value.slice(e)
+    if (maxLength && next.length > maxLength) return
+    onChange(next)
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(s + before.length, s + before.length + sel.length) })
+  }
+  const prefixLines = (make: (i: number) => string) => {
+    const el = ref.current
+    if (!el) return
+    const s = value.lastIndexOf('\n', el.selectionStart - 1) + 1
+    let e = value.indexOf('\n', el.selectionEnd)
+    if (e === -1) e = value.length
+    const block = value.slice(s, e) || 'Item'
+    const next = value.slice(0, s) + block.split('\n').map((l, i) => make(i) + l.replace(/^(\s*([-*]|\d+[.)]|#{1,3})\s+)/, '')).join('\n') + value.slice(e)
+    if (maxLength && next.length > maxLength) return
+    onChange(next)
+    requestAnimationFrame(() => el.focus())
+  }
+  const link = () => {
+    const url = window.prompt('Link address, starting with https://')
+    if (!url) return
+    if (!/^https:\/\//.test(url)) return window.alert('Use a link that starts with https://')
+    wrap('[', `](${url})`, 'link text')
+  }
+  const tools: { label: string; text: string; run: () => void; cls?: string }[] = [
+    { label: 'Bold', text: 'B', run: () => wrap('**'), cls: 'font-extrabold' },
+    { label: 'Italic', text: 'I', run: () => wrap('*'), cls: 'italic' },
+    { label: 'Heading', text: 'H', run: () => prefixLines(() => '## '), cls: 'font-bold' },
+    { label: 'Bullet list', text: '•', run: () => prefixLines(() => '- ') },
+    { label: 'Numbered list', text: '1.', run: () => prefixLines((i) => `${i + 1}. `) },
+    { label: 'Link', text: 'Link', run: link },
+  ]
+  return (
+    <div className={cn('overflow-hidden rounded-xl border bg-background focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/15', invalid && 'border-red-500')}>
+      <div className="flex flex-wrap gap-1 border-b bg-muted/40 px-2 py-1.5" role="toolbar" aria-label="Formatting">
+        {tools.map((t) => (
+          <button key={t.label} type="button" onClick={t.run} aria-label={t.label} title={t.label} className={cn('h-8 min-w-8 rounded-lg px-2 text-xs text-foreground hover:bg-background cursor-pointer', t.cls)}>{t.text}</button>
+        ))}
+      </div>
+      <textarea ref={ref} id={id} value={value} maxLength={maxLength} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className="block min-h-32 w-full resize-y bg-transparent px-3.5 py-3 text-sm outline-none placeholder:text-muted-foreground" />
+      {maxLength ? <p className="border-t px-3.5 py-1.5 text-right text-[11px] text-muted-foreground tabular-nums">{value.length}/{maxLength}</p> : null}
+    </div>
+  )
+}

@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { Building2, CheckCircle2, Clock, Eye, FileText, MapPin, Pencil, Plus, RefreshCw, Star, Trash2, XCircle } from 'lucide-react'
 import { AdminLayout } from '@/components/AdminLayout'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { Field, Input, SearchInput, Textarea } from '@/components/ui/input'
+import { Field, Input, MoneyInput, PhoneInput, RichTextarea, SearchInput } from '@/components/ui/input'
+import { useUnsavedGuard } from '@/hooks/useUnsavedGuard'
+import { check, v as rule } from '@/lib/validate'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
@@ -118,12 +120,33 @@ export default function AdminVenues() {
     setEditing(v)
   }
 
+  const [tried, setTried] = useState(false)
+  const [initial, setInitial] = useState(JSON.stringify(EMPTY))
+  useEffect(() => { if (editing) { setInitial(JSON.stringify(form)); setTried(false) } }, [editing]) // eslint-disable-line react-hooks/exhaustive-deps
+  const dirty = !!editing && JSON.stringify(form) !== initial
+  const guard = useUnsavedGuard(dirty)
+  const closeForm = () => guard(() => setEditing(null))
+  const formErrors = check({
+    name: rule.required(form.name, 'Venue name'),
+    address: rule.required(form.address, 'Address'),
+    city: rule.required(form.city, 'City'),
+    state: rule.required(form.state, 'State'),
+    booking_fee: rule.money(form.booking_fee, { max: 50_000_000 }),
+    price_per_hour: rule.money(form.price_per_hour, { max: 50_000_000 }),
+    phone: rule.phone(form.phone),
+    email: rule.email(form.email),
+    map_link: rule.url(form.map_link),
+  })
+  const err = (k: keyof typeof formErrors) => (tried ? formErrors[k] ?? null : null)
+
   const save = async () => {
     if (!editing) return
+    setTried(true)
+    if (Object.keys(formErrors).length) return toast.error('Check the highlighted fields', Object.values(formErrors)[0] as string)
     setBusy(true)
     try {
       await adminOperations.saveVenue(editing === 'new' ? null : editing.id, form)
-      toast.success(editing === 'new' ? 'Venue added' : 'Venue updated')
+      toast.success(editing === 'new' ? 'Venue added' : 'Venue updated', 'Changes are live in the app.')
       setEditing(null)
       setViewing(null)
       load()
@@ -277,26 +300,26 @@ export default function AdminVenues() {
 
       <Modal
         open={Boolean(editing)}
-        onOpenChange={(o) => !o && setEditing(null)}
+        onOpenChange={(o) => !o && closeForm()}
         size="lg"
         icon={editing === 'new' ? <Plus /> : <Pencil />}
         title={editing === 'new' ? 'Add a venue' : 'Edit venue'}
-        description="Name, address, city and state are required."
-        footer={<><Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button><Button onClick={save} loading={busy} disabled={!form.name.trim() || !form.address.trim() || !form.city.trim() || !form.state.trim()}>{editing === 'new' ? 'Add venue' : 'Save changes'}</Button></>}
+        description="Fields marked * are required."
+        footer={<><Button variant="outline" onClick={closeForm}>Cancel</Button><Button onClick={save} loading={busy} disabled={editing !== 'new' && !dirty}>{editing === 'new' ? 'Add venue' : 'Save changes'}</Button></>}
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Venue name" htmlFor="v-name" className="sm:col-span-2"><Input id="v-name" value={form.name} onChange={setF('name')} /></Field>
-          <Field label="Address" htmlFor="v-address" className="sm:col-span-2"><Input id="v-address" value={form.address} onChange={setF('address')} /></Field>
-          <Field label="City" htmlFor="v-city"><Input id="v-city" value={form.city} onChange={setF('city')} list="v-cities" /><datalist id="v-cities">{cities.map((c) => <option key={c} value={c} />)}</datalist></Field>
-          <Field label="State" htmlFor="v-state"><Input id="v-state" value={form.state} onChange={setF('state')} /></Field>
-          <Field label="Booking fee (₦)" htmlFor="v-fee"><Input id="v-fee" type="number" min={0} value={form.booking_fee} onChange={setF('booking_fee')} /></Field>
-          <Field label="Price per hour (₦)" htmlFor="v-hour"><Input id="v-hour" type="number" min={0} value={form.price_per_hour} onChange={setF('price_per_hour')} /></Field>
-          <Field label="Phone" htmlFor="v-phone"><Input id="v-phone" inputMode="tel" value={form.phone} onChange={setF('phone')} /></Field>
-          <Field label="Email" htmlFor="v-email"><Input id="v-email" type="email" value={form.email} onChange={setF('email')} /></Field>
-          <Field label="Map link" htmlFor="v-map" className="sm:col-span-2"><Input id="v-map" type="url" value={form.map_link} onChange={setF('map_link')} placeholder="https://maps.google.com/..." /></Field>
+          <Field label="Venue name *" htmlFor="v-name" className="sm:col-span-2" error={err('name')}><Input id="v-name" maxLength={120} value={form.name} onChange={setF('name')} /></Field>
+          <Field label="Address *" htmlFor="v-address" className="sm:col-span-2" error={err('address')}><Input id="v-address" autoComplete="street-address" maxLength={200} value={form.address} onChange={setF('address')} /></Field>
+          <Field label="City *" htmlFor="v-city" error={err('city')}><Input id="v-city" value={form.city} onChange={setF('city')} list="v-cities" /><datalist id="v-cities">{cities.map((c) => <option key={c} value={c} />)}</datalist></Field>
+          <Field label="State *" htmlFor="v-state" error={err('state')}><Input id="v-state" value={form.state} onChange={setF('state')} placeholder="e.g. Lagos" /></Field>
+          <Field label="Booking fee" htmlFor="v-fee" error={err('booking_fee')}><MoneyInput id="v-fee" value={form.booking_fee} onChange={(val) => setForm({ ...form, booking_fee: val })} invalid={!!err('booking_fee')} /></Field>
+          <Field label="Price per hour" htmlFor="v-hour" error={err('price_per_hour')}><MoneyInput id="v-hour" value={form.price_per_hour} onChange={(val) => setForm({ ...form, price_per_hour: val })} invalid={!!err('price_per_hour')} /></Field>
+          <Field label="Phone" htmlFor="v-phone" error={err('phone')}><PhoneInput id="v-phone" value={form.phone} onChange={(val) => setForm({ ...form, phone: val })} invalid={!!err('phone')} /></Field>
+          <Field label="Email" htmlFor="v-email" error={err('email')}><Input id="v-email" type="email" autoComplete="email" value={form.email} onChange={setF('email')} placeholder="bookings@venue.com" /></Field>
+          <Field label="Map link" htmlFor="v-map" className="sm:col-span-2" error={err('map_link')}><Input id="v-map" type="url" inputMode="url" value={form.map_link} onChange={setF('map_link')} placeholder="https://maps.google.com/..." /></Field>
           <Field label="Opening hours" htmlFor="v-hours"><Input id="v-hours" value={form.opening_hours} onChange={setF('opening_hours')} placeholder="Mon to Sun, 7am to 11pm" /></Field>
-          <Field label="Facilities" htmlFor="v-fac"><Input id="v-fac" value={form.facilities} onChange={setF('facilities')} placeholder="Floodlights, changing rooms" /></Field>
-          <Field label="Description" htmlFor="v-desc" className="sm:col-span-2"><Textarea id="v-desc" value={form.description} onChange={setF('description')} /></Field>
+          <Field label="Facilities" htmlFor="v-fac" hint="Separate with commas"><Input id="v-fac" value={form.facilities} onChange={setF('facilities')} placeholder="Floodlights, changing rooms" /></Field>
+          <Field label="Description" htmlFor="v-desc" className="sm:col-span-2" hint="Formatting shows on the venue page in the app."><RichTextarea id="v-desc" maxLength={3000} value={form.description} onChange={(val) => setForm({ ...form, description: val })} /></Field>
         </div>
       </Modal>
     </AdminLayout>

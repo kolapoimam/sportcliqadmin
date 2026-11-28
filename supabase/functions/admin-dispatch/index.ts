@@ -246,10 +246,16 @@ Deno.serve(async (req) => {
     if (nErr || !n) return json(req, { error: 'Notification not found' }, 404)
 
     const type = norm(n.channel || n.type)
-    const wantPush = type === 'push' || type === 'both' || type === 'inapp'
-    const wantEmail = type === 'email' || type === 'both'
     const target = norm(n.audience || n.target_type)
-    const link = n.link ? (String(n.link).startsWith('http') ? n.link : APP_URL + n.link) : APP_URL
+    // Admin alerts reach the team by push and email, whatever the system saved as the type
+    const wantPush = target === 'admin' || type === 'push' || type === 'both' || type === 'inapp'
+    const wantEmail = target === 'admin' || type === 'email' || type === 'both'
+    const link = n.link ? (String(n.link).startsWith('http') ? n.link : (target === 'admin' ? ADMIN_URL : APP_URL) + n.link) : (target === 'admin' ? `${ADMIN_URL}/cashouts` : APP_URL)
+
+    // A broadcast only goes out when an admin wrote it. System notices never reach every user.
+    if (target === 'all' && !n.sent_by) {
+      return json(req, { error: 'This notice was made by the system, not sent by an admin, so it is not sent to all users.' }, 400)
+    }
 
     const { data: recipients, error: rErr } = await db.rpc('admin_notification_recipients', { p_id: id })
     if (rErr) throw rErr
@@ -293,7 +299,13 @@ Deno.serve(async (req) => {
     const expected = (wantPush ? 1 : 0) + (wantEmail ? 1 : 0)
     const okParts = (wantPush && pushSent > 0 ? 1 : 0) + (wantEmail && emailSent > 0 ? 1 : 0)
     const status = errors.length === 0 ? 'sent' : okParts === 0 ? 'failed' : okParts < expected ? 'partial' : 'partial'
-    await db.rpc('admin_record_delivery', { p_id: id, p_push: pushSent, p_email: emailSent, p_status: status, p_error: errors.join(' | ') })
+    if (target === 'admin') {
+      // Keeps an admin alert in the bell, with its delivery numbers
+      const { error: aErr } = await db.rpc('admin_record_alert_delivery', { p_id: id, p_push: pushSent, p_email: emailSent, p_error: errors.join(' | ') })
+      if (aErr) await db.rpc('admin_record_delivery', { p_id: id, p_push: pushSent, p_email: emailSent, p_status: status, p_error: errors.join(' | ') })
+    } else {
+      await db.rpc('admin_record_delivery', { p_id: id, p_push: pushSent, p_email: emailSent, p_status: status, p_error: errors.join(' | ') })
+    }
     if (pushIds.length) await db.rpc('admin_record_push_stats', { p_id: id, p_onesignal_id: pushIds.join(','), p_stats: null })
     return json(req, { ok: errors.length === 0, status, push_sent: pushSent, email_sent: emailSent, recipients: list.length, error: errors.join(' | ') || undefined })
   } catch (e) {

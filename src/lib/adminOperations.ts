@@ -19,6 +19,7 @@ export interface Dashboard {
   commission_30d: number
   new_users_7d: number
   events_upcoming: number
+  events_live?: number
   pending_venues: number
   revenue_daily: { day: string; amount: number }[]
   signups_daily: { day: string; count: number }[]
@@ -194,7 +195,13 @@ export interface EventRow {
   organizer_phone: string | null
   event_date: string | null
   status: string
+  /** Slots booked. One player paying for three slots counts as three. */
   participants: number
+  /** Player or rider sign ups, one per booking */
+  registrations?: number
+  /** Different signed in accounts that joined */
+  unique_users?: number
+  end_date?: string | null
   capacity: number | null
   venue: string | null
   tickets_sold: number

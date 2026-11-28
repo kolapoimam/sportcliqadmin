@@ -5,7 +5,8 @@ import {
 import { AdminLayout } from '@/components/AdminLayout'
 import { ChartCanvas, chartColors } from '@/components/Chart'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { DatePicker, Field, Input, SearchInput, Textarea } from '@/components/ui/input'
+import { DatePicker, Field, Input, SearchInput, Textarea, MoneyInput, PhoneInput } from '@/components/ui/input'
+import { check, v as rule } from '@/lib/validate'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { Avatar } from '@/components/ui/avatar'
@@ -106,8 +107,20 @@ export default function AdminAmbassadors() {
   }
   const setF = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm({ ...form, [k]: e.target.value })
 
+  const [tried, setTried] = useState(false)
+  const ambErrors = check({
+    full_name: rule.name(form.full_name, 'Full name'),
+    phone: rule.phone(form.phone),
+    email: rule.email(form.email),
+    account_number: rule.accountNumber(form.account_number),
+    commission_rate: rule.percent(String(form.commission_rate ?? '')),
+  })
+  const aerr = (k: keyof typeof ambErrors) => (tried ? ambErrors[k] ?? null : null)
+
   const save = async () => {
     if (!editing) return
+    setTried(true)
+    if (Object.keys(ambErrors).length) return toast.error('Check the highlighted fields', Object.values(ambErrors)[0] as string)
     setBusy(true)
     try {
       await adminOperations.saveAmbassador(editing === 'new' ? null : editing.id, form)
@@ -468,15 +481,15 @@ export default function AdminAmbassadors() {
         footer={<><Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button><Button onClick={save} loading={busy} disabled={!form.full_name.trim()}>{editing === 'new' ? 'Onboard' : 'Save changes'}</Button></>}
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Full name" htmlFor="a-name" className="sm:col-span-2"><Input id="a-name" value={form.full_name} onChange={setF('full_name')} /></Field>
-          <Field label="Phone" htmlFor="a-phone"><Input id="a-phone" inputMode="tel" value={form.phone} onChange={setF('phone')} /></Field>
-          <Field label="Email" htmlFor="a-email"><Input id="a-email" type="email" value={form.email} onChange={setF('email')} /></Field>
+          <Field label="Full name *" htmlFor="a-name" className="sm:col-span-2" error={aerr('full_name')}><Input id="a-name" autoComplete="name" value={form.full_name} onChange={setF('full_name')} /></Field>
+          <Field label="Phone" htmlFor="a-phone" error={aerr('phone')}><PhoneInput id="a-phone" value={form.phone} onChange={(val) => setForm({ ...form, phone: val })} invalid={!!aerr('phone')} /></Field>
+          <Field label="Email" htmlFor="a-email" error={aerr('email')}><Input id="a-email" type="email" autoComplete="email" value={form.email} onChange={setF('email')} /></Field>
           <Field label="City" htmlFor="a-city"><Input id="a-city" value={form.city} onChange={setF('city')} /></Field>
           <Field label="State" htmlFor="a-state"><Input id="a-state" value={form.state} onChange={setF('state')} /></Field>
           <Field label="Bank" htmlFor="a-bank"><Input id="a-bank" value={form.bank_name} onChange={setF('bank_name')} /></Field>
-          <Field label="Account number" htmlFor="a-acct"><Input id="a-acct" inputMode="numeric" maxLength={10} value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value.replace(/\D/g, '') })} /></Field>
+          <Field label="Account number" htmlFor="a-acct" error={aerr('account_number')}><Input id="a-acct" inputMode="numeric" maxLength={10} value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value.replace(/\D/g, '') })} /></Field>
           <Field label="Account name" htmlFor="a-acctname" className="sm:col-span-2"><Input id="a-acctname" value={form.account_name} onChange={setF('account_name')} /></Field>
-          <Field label="Their share of SportCliq's fee (%)" htmlFor="a-rate" hint="Leave empty to use the default from Settings"><Input id="a-rate" type="number" min={0} max={100} step={0.5} value={form.commission_rate} onChange={setF('commission_rate')} /></Field>
+          <Field label="Their share of SportCliq's fee (%)" htmlFor="a-rate" hint="Leave empty to use the default from Settings" error={aerr('commission_rate')}><Input id="a-rate" type="number" min={0} max={100} step={0.5} value={form.commission_rate} onChange={setF('commission_rate')} /></Field>
           <Field label="Onboarded on" htmlFor="a-date"><DatePicker id="a-date" value={form.onboarded_at} onChange={(v) => setForm({ ...form, onboarded_at: v })} /></Field>
           <Field label="Notes" htmlFor="a-notes" className="sm:col-span-2"><Textarea id="a-notes" value={form.notes} onChange={setF('notes')} /></Field>
         </div>
@@ -527,13 +540,13 @@ export default function AdminAmbassadors() {
         icon={<Banknote />}
         title="Create a payout"
         description={selected ? `Available balance ${naira(selected.balance)}` : ''}
-        footer={<><Button variant="outline" onClick={() => setPayoutOpen(false)}>Cancel</Button><Button onClick={createPayout} loading={busy} disabled={!(Number(payout.amount) > 0)}>Create payout</Button></>}
+        footer={<><Button variant="outline" onClick={() => setPayoutOpen(false)}>Cancel</Button><Button onClick={createPayout} loading={busy} disabled={!(Number(payout.amount) > 0) || !!rule.money(payout.amount, { min: 1, max: selected?.balance ?? undefined }) || (!!payout.start && !!payout.end && payout.end < payout.start)}>Create payout</Button></>}
       >
         <div className="space-y-4">
-          <Field label="Amount (₦)" htmlFor="p-amount"><Input id="p-amount" type="number" min={1} max={selected?.balance} value={payout.amount} onChange={(e) => setPayout({ ...payout, amount: e.target.value })} className="text-lg font-bold" /></Field>
+          <Field label="Amount" htmlFor="p-amount" error={payout.amount ? rule.money(payout.amount, { min: 1, max: selected?.balance ?? undefined }) : null}><MoneyInput id="p-amount" value={payout.amount} onChange={(val) => setPayout({ ...payout, amount: val })} className="text-lg font-bold" /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Period start" htmlFor="p-start"><DatePicker id="p-start" value={payout.start} onChange={(v) => setPayout({ ...payout, start: v })} /></Field>
-            <Field label="Period end" htmlFor="p-end"><DatePicker id="p-end" value={payout.end} onChange={(v) => setPayout({ ...payout, end: v })} /></Field>
+            <Field label="Period end" htmlFor="p-end" error={payout.start && payout.end && payout.end < payout.start ? 'End must be after the start' : null}><DatePicker id="p-end" value={payout.end} onChange={(v) => setPayout({ ...payout, end: v })} /></Field>
           </div>
           <Field label="Note" htmlFor="p-note"><Input id="p-note" value={payout.note} onChange={(e) => setPayout({ ...payout, note: e.target.value })} placeholder="November earnings" /></Field>
           <Alert variant="warning">This only records the payout. Send the money yourself, then mark it as paid with the transfer reference.</Alert>

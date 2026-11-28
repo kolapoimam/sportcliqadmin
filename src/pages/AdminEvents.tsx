@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Ban, Bike, Calendar, Eye, MapPin, Pencil, Star, Trash2, Trophy, Users } from 'lucide-react'
 import { AdminLayout } from '@/components/AdminLayout'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { DatePicker, Field, Input, SearchInput, Textarea } from '@/components/ui/input'
+import { DatePicker, Field, Input, MoneyInput, RichTextarea, SearchInput } from '@/components/ui/input'
+import { useUnsavedGuard } from '@/hooks/useUnsavedGuard'
+import { check, v } from '@/lib/validate'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
@@ -16,7 +18,8 @@ import { adminOperations, type EventRow } from '@/lib/adminOperations'
 import { dateBounds, errorMessage, formatDate, formatDateTime, naira, shortId, type DateFilter } from '@/lib/utils'
 
 const SPORTS = ['Football', 'Basketball', 'Tennis', 'Volleyball', 'Cycling']
-const statusKey = (s: string) => (['passed', 'completed', 'ended'].includes(s.toLowerCase()) ? 'completed' : s.toLowerCase())
+// Status comes from the event's date, start and end time, or its cancellation
+const statusKey = (s: string) => (['passed', 'completed', 'ended'].includes(s.toLowerCase()) ? 'passed' : s.toLowerCase())
 
 export default function AdminEvents() {
   const can = useCan()
@@ -65,7 +68,7 @@ export default function AdminEvents() {
     events.forEach((e) => (c[statusKey(e.status)] = (c[statusKey(e.status)] ?? 0) + 1))
     return c
   }, [events])
-  const filtered = useMemo(() => (status === 'all' ? events : events.filter((e) => (status === 'passed' ? e.status.toLowerCase() === 'passed' : statusKey(e.status) === status))), [events, status])
+  const filtered = useMemo(() => (status === 'all' ? events : events.filter((e) => statusKey(e.status) === status)), [events, status])
   const { pageRows, pagination } = usePaged(filtered, 10)
 
   const openEdit = (e: EventRow) => {
@@ -82,9 +85,24 @@ export default function AdminEvents() {
     setEditing(e)
   }
 
+  const editErrors = editing ? check({
+    title: v.required(form.title, 'Title') || (form.title.trim().length > 120 ? 'Keep the title to 120 characters' : null),
+    date: v.date(form.date, { notPast: true }),
+    time: v.time(form.time),
+    capacity: /^\d+$/.test(form.capacity.trim()) && Number(form.capacity) < (editing.participants || 0)
+      ? `${editing.participants} slots are already booked, so it must be at least ${editing.participants}`
+      : v.int(form.capacity, { min: 1, max: 1000 }),
+    price: v.money(form.price, editing.event_type === 'cycling' && form.price ? { min: 1000, max: 10_000_000 } : { max: 10_000_000 }),
+  }) : {}
+  const [tried, setTried] = useState(false)
+  const dirty = !!editing && (form.title !== editing.title || !!form.notes || form.price !== (editing.price ? String(editing.price) : '') || form.capacity !== (editing.capacity ? String(editing.capacity) : ''))
+  const guard = useUnsavedGuard(dirty)
+  const closeEdit = () => guard(() => { setEditing(null); setTried(false) })
+
   const saveEdit = async () => {
     if (!editing) return
-    if (editing.event_type === 'cycling' && form.price && Number(form.price) < 1000) return toast.error('Cycling price must be at least ₦1,000 or empty for free')
+    setTried(true)
+    if (Object.keys(editErrors).length) return toast.error('Check the highlighted fields', Object.values(editErrors)[0] as string)
     setBusy(true)
     try {
       const data: Record<string, string> = { title: form.title.trim() }
@@ -96,7 +114,8 @@ export default function AdminEvents() {
       if (form.notes) data.notes = form.notes
       await adminOperations.editEvent(editing.event_type, editing.id, data)
       setEditing(null)
-      toast.success('Event updated')
+      setTried(false)
+      toast.success('Event updated', 'The new details are live in the app.')
       load()
     } catch (e) {
       toast.error('Could not save event', errorMessage(e))
@@ -162,12 +181,13 @@ export default function AdminEvents() {
     { key: 'date', header: 'Date', sort: (e) => e.event_date, cell: (e) => formatDate(e.event_date) },
     { key: 'status', header: 'Status', sort: (e) => e.status, cell: (e) => <StatusBadge status={e.status} /> },
     {
-      key: 'participants', header: 'Participants', sort: (e) => e.participants,
+      key: 'participants', header: 'Slots booked', sort: (e) => e.participants,
       cell: (e) => {
         const pct = e.capacity ? Math.min(100, Math.round((e.participants / e.capacity) * 100)) : 0
         return (
           <div className="min-w-24">
-            <p className="text-sm font-semibold">{e.participants}{e.capacity ? <span className="text-muted-foreground"> / {e.capacity}</span> : null}</p>
+            <p className="text-sm font-semibold">{e.participants}{e.capacity ? <span className="text-muted-foreground"> / {e.capacity} slots</span> : <span className="text-muted-foreground"> slots</span>}</p>
+            {e.registrations != null && e.registrations !== e.participants ? <p className="text-xs text-muted-foreground">{e.registrations} registration{e.registrations === 1 ? '' : 's'}</p> : null}
             {e.capacity ? <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary-light" style={{ width: `${pct}%` }} /></div> : null}
           </div>
         )
@@ -191,9 +211,8 @@ export default function AdminEvents() {
         { value: 'all', label: 'All', count: counts.all ?? 0 },
         { value: 'upcoming', label: 'Upcoming', count: counts.upcoming ?? 0 },
         { value: 'live', label: 'Live', count: counts.live ?? 0 },
-        { value: 'completed', label: 'Completed', count: counts.completed ?? 0 },
+        { value: 'passed', label: 'Passed', count: counts.passed ?? 0 },
         { value: 'cancelled', label: 'Cancelled', count: counts.cancelled ?? 0 },
-        { value: 'passed', label: 'Passed', count: events.filter((e) => e.status.toLowerCase() === 'passed').length },
       ]} />
 
       <FilterBar className="xl:grid-cols-3">
@@ -246,7 +265,9 @@ export default function AdminEvents() {
             <Detail label="Venue" className="col-span-2 sm:col-span-1"><span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{viewing.venue || 'N/A'}</span></Detail>
             <Detail label="Organizer">{viewing.organizer || 'N/A'}</Detail>
             <Detail label="Phone">{viewing.organizer_phone || 'N/A'}</Detail>
-            <Detail label="Participants"><span className="inline-flex items-center gap-1"><Users className="h-3.5 w-3.5" />{viewing.participants}{viewing.capacity ? ` / ${viewing.capacity}` : ''}</span></Detail>
+            <Detail label="Slots booked"><span className="inline-flex items-center gap-1"><Users className="h-3.5 w-3.5" />{viewing.participants}{viewing.capacity ? ` / ${viewing.capacity}` : ''}</span></Detail>
+            <Detail label="Registrations">{viewing.registrations ?? viewing.participants}</Detail>
+            <Detail label="Signed in users">{viewing.unique_users ?? 'N/A'}</Detail>
             <Detail label="Tickets Sold">{viewing.tickets_sold}</Detail>
             <Detail label="Average Rating">{viewing.avg_rating != null ? <span className="inline-flex items-center gap-1"><Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />{viewing.avg_rating} / 5</span> : 'No ratings'}</Detail>
             <Detail label="Price">{viewing.is_paid ? naira(viewing.price) : 'Free'}</Detail>
@@ -264,23 +285,27 @@ export default function AdminEvents() {
 
       <Modal
         open={Boolean(editing)}
-        onOpenChange={(o) => !o && setEditing(null)}
+        onOpenChange={(o) => !o && closeEdit()}
         size="lg"
         icon={<Pencil />}
         title="Edit event"
         description={editing?.event_type === 'cycling' ? 'Cycling event' : 'Match'}
-        footer={<><Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button><Button onClick={saveEdit} loading={busy} disabled={!form.title.trim()}>Save changes</Button></>}
+        footer={<><Button variant="outline" onClick={closeEdit}>Cancel</Button><Button onClick={saveEdit} loading={busy} disabled={!dirty && !form.date && !form.time}>Save changes</Button></>}
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Title" htmlFor="ev-title" className="sm:col-span-2"><Input id="ev-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
-          <Field label="Date" htmlFor="ev-date"><DatePicker id="ev-date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} /></Field>
-          <Field label="Start time" htmlFor="ev-time"><Input id="ev-time" type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} /></Field>
-          <Field label={editing?.event_type === 'cycling' ? 'Max attendees' : 'Total slots'} htmlFor="ev-cap"><Input id="ev-cap" type="number" min={1} value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} /></Field>
-          <Field label="Price (₦)" htmlFor="ev-price" hint="Leave empty for free"><Input id="ev-price" type="number" min={0} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></Field>
+          <Field label="Title *" htmlFor="ev-title" className="sm:col-span-2" error={tried ? editErrors.title : null}><Input id="ev-title" maxLength={120} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} aria-invalid={tried && !!editErrors.title} /></Field>
+          <Field label="Date" htmlFor="ev-date" error={tried ? editErrors.date : null}><DatePicker id="ev-date" min={new Date().toLocaleDateString('en-CA')} value={form.date} onChange={(val) => setForm({ ...form, date: val })} /></Field>
+          <Field label="Start time" htmlFor="ev-time" error={tried ? editErrors.time : null}><Input id="ev-time" type="time" step={300} value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} /></Field>
+          <Field label={editing?.event_type === 'cycling' ? 'Max attendees' : 'Total slots'} htmlFor="ev-cap" error={tried ? editErrors.capacity : null} hint={editing?.participants ? `${editing.participants} already booked` : undefined}>
+            <Input id="ev-cap" type="number" inputMode="numeric" min={Math.max(1, editing?.participants || 0)} max={1000} step={1} value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value.replace(/\D/g, '') })} />
+          </Field>
+          <Field label="Price" htmlFor="ev-price" error={tried ? editErrors.price : null} hint={editing?.event_type === 'cycling' ? 'Leave empty for free. Paid rides are at least ₦1,000.' : 'Leave empty for free'}>
+            <MoneyInput id="ev-price" value={form.price} onChange={(val) => setForm({ ...form, price: val })} invalid={tried && !!editErrors.price} />
+          </Field>
           {editing?.event_type === 'match' ? (
-            <Field label="Sport" className="sm:col-span-2"><Select ariaLabel="Sport" value={form.sport} onValueChange={(v) => setForm({ ...form, sport: v })} options={SPORTS.filter((s) => s !== 'Cycling').map((s) => ({ value: s, label: s }))} /></Field>
+            <Field label="Sport" className="sm:col-span-2"><Select ariaLabel="Sport" value={form.sport} onValueChange={(val) => setForm({ ...form, sport: val })} options={SPORTS.filter((x) => x !== 'Cycling').map((x) => ({ value: x, label: x }))} /></Field>
           ) : null}
-          <Field label="Notes" htmlFor="ev-notes" hint="Leave empty to keep the current notes" className="sm:col-span-2"><Textarea id="ev-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>
+          <Field label="Notes" htmlFor="ev-notes" hint="Leave empty to keep the current notes. Formatting shows in the app." className="sm:col-span-2"><RichTextarea id="ev-notes" maxLength={2000} value={form.notes} onChange={(val) => setForm({ ...form, notes: val })} /></Field>
         </div>
       </Modal>
     </AdminLayout>
