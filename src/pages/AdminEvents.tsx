@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Ban, Bike, Calendar, Eye, MapPin, Pencil, Star, Trash2, Trophy, Users } from 'lucide-react'
+import { Ban, Bike, Calendar, Download, Eye, MapPin, Pencil, Star, Trash2, Trophy, Users } from 'lucide-react'
 import { AdminLayout } from '@/components/AdminLayout'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { DatePicker, Field, Input, MoneyInput, RichTextarea, SearchInput } from '@/components/ui/input'
@@ -14,11 +14,15 @@ import { Menu } from '@/components/ui/menu'
 import { Alert, useConfirm, useStepUp, useToast } from '@/components/ui/feedback'
 import { Detail, EmptyState, FilterBar, Loading, PageHeader, Pagination, Segmented, StatTile, usePaged } from '@/components/ui/page'
 import { useCan } from '@/hooks/useAdminSession'
-import { adminOperations, type EventRow } from '@/lib/adminOperations'
-import { dateBounds, errorMessage, formatDate, formatDateTime, naira, shortId, type DateFilter } from '@/lib/utils'
+import { adminOperations, type EventParticipant, type EventRow } from '@/lib/adminOperations'
+import Papa from 'papaparse'
+import { cn, dateBounds, downloadBlob, errorMessage, formatDate, formatDateTime, naira, shortId, type DateFilter } from '@/lib/utils'
 
 const SPORTS = ['Football', 'Basketball', 'Tennis', 'Volleyball', 'Cycling']
 // Status comes from the event's date, start and end time, or its cancellation
+// Labels for answers organisers ask for, like jersey_number to Jersey number
+const labelOf = (k: string) => k.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+
 const statusKey = (s: string) => (['passed', 'completed', 'ended'].includes(s.toLowerCase()) ? 'passed' : s.toLowerCase())
 
 export default function AdminEvents() {
@@ -37,6 +41,26 @@ export default function AdminEvents() {
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
   const [viewing, setViewing] = useState<EventRow | null>(null)
+  const [people, setPeople] = useState<{ event: EventRow; rows: EventParticipant[] | null; error?: string } | null>(null)
+  const openPeople = async (e: EventRow) => {
+    setPeople({ event: e, rows: null })
+    try {
+      const rows = (await adminOperations.getEventParticipants(e.event_type, e.id)) || []
+      setPeople((p) => (p && p.event.id === e.id ? { ...p, rows } : p))
+    } catch (err) {
+      setPeople((p) => (p && p.event.id === e.id ? { ...p, rows: [], error: errorMessage(err) } : p))
+    }
+  }
+  const exportPeople = () => {
+    if (!people?.rows?.length) return
+    const csv = Papa.unparse(people.rows.map((r) => ({
+      Name: r.name, Phone: r.phone ?? '', Email: r.email ?? '', Slots: r.slots, Payment: r.payment ?? '', Status: r.cancelled ? 'Cancelled' : r.status ?? '',
+      Code: r.code ?? '', 'Payment reference': r.payment_reference ?? '', 'Signed in': r.account ? 'Yes' : 'No',
+      ...Object.fromEntries(Object.entries(r.details || {}).map(([k, val]) => [labelOf(k), String(val ?? '')])),
+      Registered: formatDateTime(r.created_at),
+    })))
+    downloadBlob('\ufeff' + csv, `participants-${people.event.title.replace(/[^\w]+/g, '-').toLowerCase()}.csv`, 'text/csv;charset=utf-8')
+  }
   const [editing, setEditing] = useState<EventRow | null>(null)
   const [form, setForm] = useState({ title: '', date: '', time: '', capacity: '', price: '', sport: 'Football', notes: '' })
   const [busy, setBusy] = useState(false)
@@ -155,6 +179,7 @@ export default function AdminEvents() {
   const rowMenu = (e: EventRow) => (
     <Menu items={[
       { label: 'View details', icon: <Eye />, onSelect: () => setViewing(e) },
+      { label: 'See who registered', icon: <Users />, onSelect: () => openPeople(e) },
       { label: 'Edit event', icon: <Pencil />, onSelect: () => openEdit(e), hidden: !isUpcoming(e) || !can('events.edit') },
       'separator',
       { label: 'Cancel event', icon: <Ban />, tone: 'danger', onSelect: () => cancelEvent(e), hidden: !isUpcoming(e) || !can('events.cancel') },
@@ -185,11 +210,11 @@ export default function AdminEvents() {
       cell: (e) => {
         const pct = e.capacity ? Math.min(100, Math.round((e.participants / e.capacity) * 100)) : 0
         return (
-          <div className="min-w-24">
-            <p className="text-sm font-semibold">{e.participants}{e.capacity ? <span className="text-muted-foreground"> / {e.capacity} slots</span> : <span className="text-muted-foreground"> slots</span>}</p>
+          <button type="button" onClick={(ev) => { ev.stopPropagation(); openPeople(e) }} className="min-w-24 cursor-pointer rounded-lg text-left hover:opacity-80" aria-label={`See who registered for ${e.title}`} title="See who registered">
+            <p className="text-sm font-semibold text-primary underline decoration-dotted underline-offset-4">{e.participants}{e.capacity ? <span className="text-muted-foreground"> / {e.capacity} slots</span> : <span className="text-muted-foreground"> slots</span>}</p>
             {e.registrations != null && e.registrations !== e.participants ? <p className="text-xs text-muted-foreground">{e.registrations} registration{e.registrations === 1 ? '' : 's'}</p> : null}
             {e.capacity ? <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary-light" style={{ width: `${pct}%` }} /></div> : null}
-          </div>
+          </button>
         )
       },
     },
@@ -265,7 +290,7 @@ export default function AdminEvents() {
             <Detail label="Venue" className="col-span-2 sm:col-span-1"><span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{viewing.venue || 'N/A'}</span></Detail>
             <Detail label="Organizer">{viewing.organizer || 'N/A'}</Detail>
             <Detail label="Phone">{viewing.organizer_phone || 'N/A'}</Detail>
-            <Detail label="Slots booked"><span className="inline-flex items-center gap-1"><Users className="h-3.5 w-3.5" />{viewing.participants}{viewing.capacity ? ` / ${viewing.capacity}` : ''}</span></Detail>
+            <Detail label="Slots booked"><button type="button" onClick={() => openPeople(viewing)} className="inline-flex cursor-pointer items-center gap-1 font-semibold text-primary underline decoration-dotted underline-offset-4"><Users className="h-3.5 w-3.5" />{viewing.participants}{viewing.capacity ? ` / ${viewing.capacity}` : ''}</button></Detail>
             <Detail label="Registrations">{viewing.registrations ?? viewing.participants}</Detail>
             <Detail label="Signed in users">{viewing.unique_users ?? 'N/A'}</Detail>
             <Detail label="Tickets Sold">{viewing.tickets_sold}</Detail>
@@ -307,6 +332,60 @@ export default function AdminEvents() {
           ) : null}
           <Field label="Notes" htmlFor="ev-notes" hint="Leave empty to keep the current notes. Formatting shows in the app." className="sm:col-span-2"><RichTextarea id="ev-notes" maxLength={2000} value={form.notes} onChange={(val) => setForm({ ...form, notes: val })} /></Field>
         </div>
+      </Modal>
+      <Modal
+        open={Boolean(people)}
+        onOpenChange={(o) => !o && setPeople(null)}
+        size="xl"
+        icon={<Users />}
+        title={people ? `Registered for ${people.event.title}` : ''}
+        description={people?.rows ? (() => {
+          const live = people.rows.filter((r) => !r.cancelled)
+          const slots = live.reduce((n, r) => n + (r.slots || 1), 0)
+          return `${slots} slot${slots === 1 ? '' : 's'} booked by ${live.length} ${people.event.event_type === 'cycling' ? 'rider' : 'player'}${live.length === 1 ? '' : 's'}${people.event.capacity ? `, ${people.event.capacity} available` : ''}`
+        })() : 'Loading'}
+        footer={<><Button variant="outline" onClick={() => setPeople(null)}>Close</Button><Button variant="outline" onClick={exportPeople} disabled={!people?.rows?.length}><Download /> Export CSV</Button></>}
+      >
+        {!people?.rows ? <Loading /> : people.error ? <Alert>{people.error}</Alert> : people.rows.length === 0 ? (
+          <EmptyState icon={<Users />} title="Nobody has registered yet" text="Players and riders show here as soon as they join." />
+        ) : (
+          <div className="-mx-1 overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="px-2 py-2 font-semibold">Name</th>
+                  <th className="px-2 py-2 font-semibold">Phone</th>
+                  <th className="px-2 py-2 text-right font-semibold">Slots</th>
+                  <th className="px-2 py-2 font-semibold">Payment</th>
+                  <th className="px-2 py-2 font-semibold">Status</th>
+                  <th className="px-2 py-2 font-semibold">Other details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {people.rows.map((r) => (
+                  <tr key={r.id} className={cn('border-t align-top', r.cancelled && 'opacity-60')}>
+                    <td className="px-2 py-2.5">
+                      <p className="font-semibold">{r.name}</p>
+                      <p className="text-xs text-muted-foreground">{r.email || (r.account ? 'Signed in' : 'Guest')}</p>
+                      <p className="text-[11px] text-muted-foreground">Joined {formatDateTime(r.created_at)}</p>
+                    </td>
+                    <td className="px-2 py-2.5 whitespace-nowrap">{r.phone ? <a href={`tel:${r.phone}`} className="font-medium text-primary hover:underline">{r.phone}</a> : <span className="text-muted-foreground">None</span>}</td>
+                    <td className="px-2 py-2.5 text-right font-bold tabular-nums">{r.slots}</td>
+                    <td className="px-2 py-2.5"><StatusBadge status={r.payment || 'free'} />{r.payment_reference ? <p className="mt-1 font-mono text-[11px] text-muted-foreground">{r.payment_reference}</p> : null}</td>
+                    <td className="px-2 py-2.5"><StatusBadge status={r.cancelled ? 'cancelled' : r.status || 'registered'} />{r.code ? <p className="mt-1 font-mono text-[11px] text-muted-foreground">Code {r.code}</p> : null}</td>
+                    <td className="px-2 py-2.5 text-xs">
+                      {Object.entries(r.details || {}).filter(([, val]) => val != null && String(val).trim() !== '').length
+                        ? Object.entries(r.details || {}).filter(([, val]) => val != null && String(val).trim() !== '').map(([k, val]) => (
+                          <p key={k} className="m-0"><span className="text-muted-foreground">{labelOf(k)}</span> {typeof val === 'object' ? JSON.stringify(val) : String(val)}</p>
+                        ))
+                        : <span className="text-muted-foreground">None</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Modal>
     </AdminLayout>
   )

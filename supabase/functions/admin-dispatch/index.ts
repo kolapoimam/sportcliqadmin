@@ -31,6 +31,15 @@ function cors(req: Request) {
 const json = (req: Request, body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors(req), 'Content-Type': 'application/json' } })
 
+// SportCliq channels, shown as icons at the foot of every email
+const SOCIAL = [
+  { href: 'https://whatsapp.com/channel/0029Vb69lS19RZAYCY9ors35', file: 'social-wa.png', label: 'SportCliq on WhatsApp' },
+  { href: 'https://x.com/SportCliq', file: 'social-x.png', label: 'SportCliq on X' },
+  { href: 'https://www.instagram.com/SportCliqHQ', file: 'social-ig.png', label: 'SportCliq on Instagram' },
+]
+const socialRow = () => `<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto"><tr>${SOCIAL.map((x) =>
+  `<td style="padding:0 7px"><a href="${x.href}" title="${x.label}" style="display:inline-block;text-decoration:none"><img src="https://app.sportcliq.com/brand/${x.file}" width="36" height="36" alt="${x.label}" style="display:block;width:36px;height:36px;border:0;border-radius:18px"></a></td>`).join('')}</tr></table>`
+
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 const norm = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z]/g, '')
 const chunk = <T,>(arr: T[], n: number) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n))
@@ -110,7 +119,8 @@ ${o.details.map(([k, v], i) => `<tr><td class="muted" style="padding:${i ? '0' :
   <tr><td class="foot muted" style="padding:18px 34px 22px;background:#F8FAF8;border-top:1px solid #EDF0EE;font-size:12px;line-height:1.6;color:#69746D">${o.footerHtml}</td></tr>
   </table>
 </td></tr>
-<tr><td class="muted" align="center" style="padding:18px 6px 0;font-size:11px;line-height:1.6;color:#8A948E">SportCliq &middot; Play, organise and book sports near you</td></tr>
+<tr><td align="center" style="padding:20px 6px 0">${socialRow()}</td></tr>
+<tr><td class="muted" align="center" style="padding:14px 6px 0;font-size:11px;line-height:1.6;color:#8A948E">SportCliq &middot; Play, organise and book sports near you</td></tr>
 </table>
 </td></tr></table>
 </body></html>`

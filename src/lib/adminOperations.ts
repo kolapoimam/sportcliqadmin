@@ -214,6 +214,24 @@ export interface EventRow {
   created_at: string
 }
 
+export interface EventParticipant {
+  id: string
+  name: string
+  phone: string | null
+  email: string | null
+  slots: number
+  payment: string | null
+  status: string | null
+  cancelled: boolean
+  code: string | null
+  payment_reference: string | null
+  /** Joined while signed in to a SportCliq account */
+  account: boolean
+  /** Any other answers the organiser asked for, like jersey number */
+  details: Record<string, unknown>
+  created_at: string
+}
+
 export interface CashoutRow {
   id: string
   raw_status?: string
@@ -505,6 +523,8 @@ export const adminOperations = {
     rpc<void>('admin_user_action', { p_user_id: userId, p_action: action, p_target_table: targetTable }),
 
   // Events
+  getEventParticipants: (type: 'match' | 'cycling', id: string) =>
+    rpc<EventParticipant[]>('admin_get_event_participants', { p_event_type: type, p_id: id }),
   getEvents: (f: { search?: string; status: string; sport: string; start: string | null; end: string | null }) =>
     rpc<EventRow[]>('admin_get_events', { p_search: f.search || null, p_status: f.status, p_sport: f.sport, p_start: f.start, p_end: f.end }),
   updateEvent: (type: string, id: string, title: string, date: string | null) =>
